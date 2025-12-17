@@ -1,16 +1,26 @@
+import platform
 import ctypes
-from ctypes import windll, wintypes
+
+# Detect OS immediately
+IS_WINDOWS = platform.system() == "Windows"
 
 # --- Constants for Windows API ---
+# Only relevant if on Windows
 DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4
+
+if IS_WINDOWS:
+    from ctypes import windll, wintypes
 
 
 def enable_dpi_awareness():
     """
     Forces the application to be 'Per-Monitor DPI Aware'.
     Tries V2 first (Win10/11), falls back to V1 (Win8.1), then System (Win7).
-    This ensures coordinates match physical pixels on mixed-resolution/VSR screens.
+    Safe to call on non-Windows systems (does nothing).
     """
+    if not IS_WINDOWS:
+        return
+
     try:
         # Method 1: Per-Monitor V2 (Windows 10 Anniversary Update +)
         # This is the gold standard for mixed DPI environments.
@@ -34,7 +44,15 @@ def get_window_rect(hwnd):
     """
     Returns the physical pixel coordinates of the window,
     bypassing Windows DPI virtualization.
+
+    On non-Windows systems, returns (0, 0, 0, 0) or handles appropriately
+    if you implement Mac/Linux logic later.
     """
+    if not IS_WINDOWS:
+        # On Mac/Linux, standard Qt geometry methods usually work fine
+        # without OS-level overrides.
+        return (0, 0, 0, 0)
+
     rect = wintypes.RECT()
     try:
         # DWM Extended Frame Bounds excludes the invisible drop shadow borders,

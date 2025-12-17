@@ -4,7 +4,7 @@ import time
 from PIL import Image
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QLabel, QPushButton, QSlider,
-                             QCheckBox, QTextEdit, QFileDialog, QGroupBox, QMessageBox, QComboBox)
+                             QCheckBox, QTextEdit, QFileDialog, QGroupBox, QMessageBox, QComboBox, QSpinBox)
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint, QBuffer, QIODevice
 from PyQt6.QtGui import QPixmap, QImage
 
@@ -24,6 +24,7 @@ if sys.platform == "win32":
 
     user32 = ctypes.windll.user32
     WDA_EXCLUDEFROMCAPTURE = 0x00000011
+
 
     def set_window_display_affinity(hwnd, affinity):
         try:
@@ -107,7 +108,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Desktop Inspector")
-        self.resize(550, 750)
+        self.resize(550, 800)  # Increased height for new controls
         self.setStyleSheet(DARK_THEME)
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
 
@@ -187,9 +188,10 @@ class MainWindow(QMainWindow):
         layout.addWidget(grp_cap)
 
         # --- 2. Parameters ---
-        grp_test = QGroupBox("2. Live Test")
+        grp_test = QGroupBox("2. Live Test & Action")
         test_layout = QVBoxLayout()
 
+        # Confidence
         hbox_conf = QHBoxLayout()
         hbox_conf.addWidget(QLabel("Confidence:"))
         self.slider_conf = QSlider(Qt.Orientation.Horizontal)
@@ -200,6 +202,7 @@ class MainWindow(QMainWindow):
         hbox_conf.addWidget(self.slider_conf)
         hbox_conf.addWidget(self.lbl_conf_val)
 
+        # Overlap
         hbox_overlap = QHBoxLayout()
         hbox_overlap.addWidget(QLabel("Overlap Threshold:"))
         self.slider_overlap = QSlider(Qt.Orientation.Horizontal)
@@ -212,6 +215,31 @@ class MainWindow(QMainWindow):
 
         self.chk_gray = QCheckBox("Grayscale (Faster)")
         self.chk_gray.setChecked(True)
+
+        # --- Click / Action Settings ---
+        hbox_click = QHBoxLayout()
+        self.chk_click = QCheckBox("Simulate Click / Show Target")
+        self.chk_click.stateChanged.connect(self.update_overlay_click_settings)
+
+        self.spin_off_x = QSpinBox()
+        self.spin_off_x.setRange(-9999, 9999)
+        self.spin_off_x.setValue(0)
+        self.spin_off_x.setSuffix(" px")
+        self.spin_off_x.setToolTip("X Offset from Center")
+        self.spin_off_x.valueChanged.connect(self.update_overlay_click_settings)
+
+        self.spin_off_y = QSpinBox()
+        self.spin_off_y.setRange(-9999, 9999)
+        self.spin_off_y.setValue(0)
+        self.spin_off_y.setSuffix(" px")
+        self.spin_off_y.setToolTip("Y Offset from Center")
+        self.spin_off_y.valueChanged.connect(self.update_overlay_click_settings)
+
+        hbox_click.addWidget(self.chk_click)
+        hbox_click.addWidget(QLabel("X:"))
+        hbox_click.addWidget(self.spin_off_x)
+        hbox_click.addWidget(QLabel("Y:"))
+        hbox_click.addWidget(self.spin_off_y)
 
         # --- Screen Selection ---
         hbox_screen = QHBoxLayout()
@@ -241,6 +269,7 @@ class MainWindow(QMainWindow):
         test_layout.addLayout(hbox_conf)
         test_layout.addLayout(hbox_overlap)
         test_layout.addWidget(self.chk_gray)
+        test_layout.addLayout(hbox_click)  # Add click row
         test_layout.addLayout(hbox_screen)
         test_layout.addLayout(hbox_ctrl)
         test_layout.addWidget(self.btn_start)
@@ -268,6 +297,14 @@ class MainWindow(QMainWindow):
     def update_overlap_label(self):
         val = self.slider_overlap.value() / 100.0
         self.lbl_overlap_val.setText(f"{val:.2f}")
+
+    def update_overlay_click_settings(self):
+        """Push click settings to overlay immediately."""
+        self.overlay.set_click_config(
+            self.chk_click.isChecked(),
+            self.spin_off_x.value(),
+            self.spin_off_y.value()
+        )
 
     # --- Snipping Handlers ---
     def start_snip_template(self):
@@ -370,6 +407,9 @@ class MainWindow(QMainWindow):
                         self.chk_gray.setChecked(False)
 
             self.is_detecting = True
+            # Sync click settings before showing
+            self.update_overlay_click_settings()
+
             self.last_fps_time = time.time()
             self.overlay.show()
             self.detection_timer.start(50)  # Increased interval slightly for screen grab perf
@@ -537,12 +577,15 @@ class MainWindow(QMainWindow):
             self.template_image.save(fname)
             filename = os.path.basename(fname)
             name = filename.replace('.png', '')
+
+            # Build Parameters
             params = [
                 f"'{filename}'",
                 f"confidence={self.lbl_conf_val.text()}",
-                f"grayscale={self.chk_gray.isChecked()}",
-                f"overlap_threshold={self.lbl_overlap_val.text()}"
+                f"grayscale={self.chk_gray.isChecked()}"
             ]
+            # Only add overlap if it's relevant for locateAll (not used in locateOnScreen but good for consistency)
+            # or if we switch to locateAll logic in the future.
 
             if self.search_region:
                 params.append(f"region={self.search_region}")
@@ -552,12 +595,21 @@ class MainWindow(QMainWindow):
                     geo = screen.geometry()
                     params.append(f"region=({geo.x()}, {geo.y()}, {geo.width()}, {geo.height()})")
 
-            # Cleaned up Code Generation
-            code_block = (
-                f"import pyauto_desktop\n\n"
-                f"{name} = pyauto_desktop.locateOnScreen({', '.join(params)})\n"
-                f"if {name}:\n  print({name})"
-            )
+            # Build Code Block
+            code_lines = [f"{name} = pyauto_desktop.locateOnScreen({', '.join(params)})"]
+
+
+            # Action (Click) or Validation
+            code_lines.append(f"if {name}:")
+            code_lines.append(f"    print(f'Found {name} at: {{{name}}}')")
+
+            if self.chk_click.isChecked():
+                off_x = self.spin_off_x.value()
+                off_y = self.spin_off_y.value()
+                code_lines.append(f"    pyauto_desktop.clickimage({name}, offset=({off_x}, {off_y}))")
+
+            code_block = "\n".join(code_lines)
+
             self.txt_output.setText(code_block)
             QApplication.clipboard().setText(code_block)
             self.lbl_status.setText("Code copied!")

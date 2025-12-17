@@ -9,7 +9,8 @@ setup(
         'opencv-python',
         'numpy',
         'Pillow',
-        'PyQt6'
+        'PyQt6',
+        'pynput'
     ],
     description='A lightweight desktop automation tool for image recognition.',
     author='Omar Rashed',

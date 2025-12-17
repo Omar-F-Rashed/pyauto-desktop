@@ -1,7 +1,10 @@
 import cv2
 import numpy as np
 from PIL import Image, ImageGrab
+from pynput.mouse import Button, Controller
 
+# Initialize the controller once to save performance
+_mouse_controller = Controller()
 
 def _load_image(img):
     """Helper to load image from path or PIL Image."""
@@ -197,3 +200,43 @@ def locateOnScreen(image, region=None, grayscale=False, confidence=0.9, overlap_
         return (x + rx, y + ry, w, h)
 
     return result
+
+
+def clickimage(match, offset=(0, 0), button='left', clicks=1):
+    """
+    Clicks a location with an optional offset using pynput.
+
+    Args:
+        match: (x, y, w, h) tuple from locateOnScreen
+        offset: (x, y) tuple of pixels to shift from the CENTER
+        button: 'left', 'middle', 'right'
+        duration: Simulated delay (pynput doesn't handle smooth moving,
+                  so this just pauses before clicking)
+    """
+    if not match:
+        print("Debug: No match found, skipping click.")
+        return
+
+    x, y, w, h = match
+
+    # 1. Calculate Center
+    center_x = x + (w / 2)
+    center_y = y + (h / 2)
+
+    # 2. Apply Offset
+    target_x = center_x + offset[0]
+    target_y = center_y + offset[1]
+
+    # 3. Move
+    _mouse_controller.position = (target_x, target_y)
+
+
+    # 4. Determine Button
+    pynput_button = Button.left
+    if button == 'right':
+        pynput_button = Button.right
+    elif button == 'middle':
+        pynput_button = Button.middle
+
+    # 5. Click
+    _mouse_controller.click(pynput_button, clicks)
