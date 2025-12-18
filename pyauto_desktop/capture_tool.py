@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QWidget, QApplication
 from PyQt6.QtCore import Qt, pyqtSignal, QRect, QObject
-from PyQt6.QtGui import QPainter, QColor, QPen, QPixmap
+from PyQt6.QtGui import QPainter, QColor, QPen, QPixmap, QRegion
 
 
 class Snipper(QWidget):
@@ -17,21 +17,27 @@ class Snipper(QWidget):
         super().__init__()
         self.target_screen = screen
 
-        # Window Flags: Frameless, On Top, Tool (no taskbar icon)
+        # Window Flags: Frameless, On Top, Tool
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint |
                             Qt.WindowType.WindowStaysOnTopHint |
                             Qt.WindowType.Tool)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+        # NOTE: We removed WA_TranslucentBackground.
+        # Since we are drawing the full screenshot (opaque), we don't need transparency
+        # at the window level. This often improves performance and avoids composition artifacts.
+        # self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
         self.setCursor(Qt.CursorShape.CrossCursor)
 
+        # Ensure we can catch the ESC key immediately
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
         # 1. Geometry Setup
-        # We set the geometry to match the logical geometry of the assigned screen exactly.
         geo = self.target_screen.geometry()
         self.setGeometry(geo)
 
         # 2. Background Capture
-        # We capture the screen content immediately to use as the background.
-        # grabWindow(0) captures the specific screen this widget is on.
+        # Capture the screen content immediately to use as the frozen background.
         self.original_pixmap = self.target_screen.grabWindow(0)
 
         # State
@@ -39,39 +45,51 @@ class Snipper(QWidget):
         self.end_point = None
         self.is_snipping = False
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Force grab keyboard so ESC works immediately without clicking first
+        self.activateWindow()
+        self.setFocus()
+
     def paintEvent(self, event):
         painter = QPainter(self)
 
-        # 1. Draw the frozen screenshot (Background)
-        # We draw the pixmap into the full rect of the widget.
-        # Qt handles the High-DPI scaling here automatically if the widget size matches the screen logical size.
+        # --- Layer 1: The "Dim" Background ---
+        # Draw the frozen screenshot
         painter.drawPixmap(self.rect(), self.original_pixmap)
 
-        # 2. Draw Dim Overlay
+        # Draw a semi-transparent black layer over the whole image to dim it
         painter.setBrush(QColor(0, 0, 0, 100))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRect(self.rect())
 
-        # 3. Draw Selection (Clear/Highlight)
+        # --- Layer 2: The "Bright" Selection ---
         if self.start_point and self.end_point:
+            # Calculate the selection rectangle
             rect = QRect(self.start_point, self.end_point).normalized()
 
-            # "Cut out" the dim overlay to reveal the bright screenshot
-            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
-            painter.drawRect(rect)
+            # Set a clip region to ONLY draw inside the selection rectangle
+            painter.setClipRect(rect)
 
-            # Draw Blue Border
-            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+            # Draw the bright original screenshot again.
+            # Because of the clip, it only appears inside the box.
+            painter.drawPixmap(self.rect(), self.original_pixmap)
+
+            # Disable clipping to draw the border
+            painter.setClipping(False)
+
+            # Draw the Blue Border around the selection
             painter.setPen(QPen(QColor(0, 120, 255), 2))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(rect)
 
     def mousePressEvent(self, event):
-        # Start snipping logic local to this screen
-        self.start_point = event.pos()
-        self.end_point = event.pos()
-        self.is_snipping = True
-        self.update()
+        # Start snipping logic
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.start_point = event.pos()
+            self.end_point = event.pos()
+            self.is_snipping = True
+            self.update()
 
     def mouseMoveEvent(self, event):
         if self.is_snipping:
@@ -79,7 +97,7 @@ class Snipper(QWidget):
             self.update()
 
     def mouseReleaseEvent(self, event):
-        if not self.is_snipping:
+        if not self.is_snipping or event.button() != Qt.MouseButton.LeftButton:
             return
 
         self.is_snipping = False
@@ -89,20 +107,25 @@ class Snipper(QWidget):
         end = self.end_point
         local_rect = QRect(start, end).normalized()
 
+        # Handle accidental tiny clicks
+        if local_rect.width() < 5 or local_rect.height() < 5:
+            # If it's too small, just reset the selection instead of closing
+            self.start_point = None
+            self.end_point = None
+            self.update()
+            return
+
         # 2. Calculate Physical Crop
-        # We must crop the original high-res pixmap.
-        # Map logical coordinates to physical pixels using the device pixel ratio.
         dpr = self.target_screen.devicePixelRatio()
         phys_x = int(local_rect.x() * dpr)
         phys_y = int(local_rect.y() * dpr)
         phys_w = int(local_rect.width() * dpr)
         phys_h = int(local_rect.height() * dpr)
 
-        # Safe crop (copy rect from original pixmap)
+        # Safe crop
         cropped_pixmap = self.original_pixmap.copy(phys_x, phys_y, phys_w, phys_h)
 
         # 3. Calculate Global Coordinates
-        # Global = Screen Origin + Local Offset
         screen_geo = self.target_screen.geometry()
         global_x = screen_geo.x() + local_rect.x()
         global_y = screen_geo.y() + local_rect.y()
@@ -140,16 +163,17 @@ class SnippingController(QObject):
             snipper.show()
             self.snippers.append(snipper)
 
+        # Ensure the primary screen's snipper gets focus initially
+        if self.snippers:
+            self.snippers[0].activateWindow()
+            self.snippers[0].setFocus()
+
     def on_snip_completed(self, pixmap, rect):
-        # Forward the result
         self.finished.emit(pixmap, rect)
         self.close_all()
 
     def on_snip_cancelled(self):
-        """
-        Handle cancellation (e.g., ESC key) by notifying listeners with
-        an empty result so they can restore their UI state.
-        """
+        # Emit empty result to signify cancellation
         self.finished.emit(QPixmap(), (0, 0, 0, 0))
         self.close_all()
 

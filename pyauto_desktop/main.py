@@ -4,7 +4,8 @@ import time
 from PIL import Image
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QLabel, QPushButton, QSlider,
-                             QCheckBox, QTextEdit, QFileDialog, QGroupBox, QMessageBox, QComboBox, QSpinBox)
+                             QCheckBox, QTextEdit, QFileDialog, QGroupBox, QMessageBox, QComboBox, QSpinBox,
+                             QRadioButton)
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint, QBuffer, QIODevice
 from PyQt6.QtGui import QPixmap, QImage
 
@@ -116,6 +117,8 @@ class MainWindow(QMainWindow):
         self.template_image = None
         self.search_region = None  # (x, y, w, h) in Global Logical Coordinates
         self.current_scale = 1.0
+        self.is_image_unsaved = False
+        self.current_filename = None
 
         # Controllers
         self.snip_controller = SnippingController()
@@ -280,13 +283,35 @@ class MainWindow(QMainWindow):
         # --- 3. Output ---
         grp_out = QGroupBox("3. Generate Code")
         out_layout = QVBoxLayout()
+
+        # Generation Mode (Single vs All)
+        hbox_mode = QHBoxLayout()
+        self.rdo_single = QRadioButton("Best Match (Single)")
+        self.rdo_single.setChecked(True)
+        self.rdo_all = QRadioButton("All Matches (Loop)")
+        hbox_mode.addWidget(self.rdo_single)
+        hbox_mode.addWidget(self.rdo_all)
+        out_layout.addLayout(hbox_mode)
+
+        hbox_gen = QHBoxLayout()
+        self.btn_save = QPushButton("Save Image")
+        self.btn_save.clicked.connect(self.save_image)
+        self.btn_save.setEnabled(False)
+
+        self.btn_gen = QPushButton("Generate Code")
+        self.btn_gen.clicked.connect(self.generate_code)
+        self.btn_gen.setEnabled(False)  # Disabled by default until saved/loaded
+
+        hbox_gen.addWidget(self.btn_save)
+        hbox_gen.addWidget(self.btn_gen)
+
+        out_layout.addLayout(hbox_gen)
+
         self.txt_output = QTextEdit()
         self.txt_output.setPlaceholderText("Generated code will appear here...")
         self.txt_output.setFixedHeight(120)
-        btn_gen = QPushButton("Save Image & Generate Code")
-        btn_gen.clicked.connect(self.generate_code)
-        out_layout.addWidget(btn_gen)
         out_layout.addWidget(self.txt_output)
+
         grp_out.setLayout(out_layout)
         layout.addWidget(grp_out)
 
@@ -328,6 +353,12 @@ class MainWindow(QMainWindow):
         if self.active_snip_mode == 'template':
             # Convert QPixmap to PIL for editor
             pil_image = self.qpixmap_to_pil(pixmap)
+
+            # Reset state for new unsaved image
+            self.is_image_unsaved = True
+            self.current_filename = None
+            self.btn_gen.setEnabled(False)  # Disable code gen for unsaved snip
+
             self.open_editor(pil_image)
 
         elif self.active_snip_mode == 'region':
@@ -362,7 +393,14 @@ class MainWindow(QMainWindow):
         try:
             img = Image.open(path)
             self.current_scale = QApplication.primaryScreen().devicePixelRatio()
+
+            # Loaded image is considered "saved" or at least exists on disk
+            self.is_image_unsaved = False
+            self.current_filename = os.path.basename(path)
+
             self.open_editor(img)
+            self.btn_gen.setEnabled(True)  # Enable code gen for loaded image
+
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load image:\n{e}")
 
@@ -378,6 +416,11 @@ class MainWindow(QMainWindow):
             self.btn_start.setEnabled(True)
             self.btn_start.setText("Start Detection")
             self.btn_reedit.setEnabled(True)
+            self.btn_save.setEnabled(True)
+
+            # Note: We do NOT enable btn_gen here for snipped images.
+            # It remains disabled until saved.
+            # For loaded images, it was already enabled in process_loaded_image.
 
     def update_preview(self):
         if not self.template_image: return
@@ -397,6 +440,9 @@ class MainWindow(QMainWindow):
             self.btn_reedit.setEnabled(True)
             self.lbl_preview.setEnabled(True)
             self.cbo_screens.setEnabled(True)
+            self.btn_save.setEnabled(True)
+            # Restore state of generate button
+            self.btn_gen.setEnabled(not self.is_image_unsaved and self.template_image is not None)
         else:
             if not self.template_image: return
 
@@ -419,6 +465,8 @@ class MainWindow(QMainWindow):
             self.btn_reedit.setEnabled(False)
             self.lbl_preview.setEnabled(False)
             self.cbo_screens.setEnabled(False)
+            self.btn_save.setEnabled(False)
+            self.btn_gen.setEnabled(False)
 
     def detection_step(self):
         if self.worker_running or not self.is_detecting: return
@@ -567,52 +615,113 @@ class MainWindow(QMainWindow):
         self.lbl_status.setText(f"Matches: {count} (FPS: {fps})")
 
     # --- Generation ---
-    def generate_code(self):
+    def save_image(self):
         if not self.template_image: return
 
         fname, _ = QFileDialog.getSaveFileName(self, "Save Image", "template.png", "Images (*.png)")
         if fname:
-
             if not fname.endswith('.png'): fname += '.png'
-            self.template_image.save(fname)
-            filename = os.path.basename(fname)
-            name = filename.replace('.png', '')
+            try:
+                self.template_image.save(fname)
+                self.current_filename = os.path.basename(fname)
+                self.is_image_unsaved = False
 
-            # Build Parameters
-            params = [
-                f"'{filename}'",
-                f"confidence={self.lbl_conf_val.text()}",
-                f"grayscale={self.chk_gray.isChecked()}"
-            ]
-            # Only add overlap if it's relevant for locateAll (not used in locateOnScreen but good for consistency)
-            # or if we switch to locateAll logic in the future.
+                self.btn_gen.setEnabled(True)
+                self.lbl_status.setText(f"Saved: {self.current_filename}")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to save image: {e}")
 
-            if self.search_region:
-                params.append(f"region={self.search_region}")
+    def generate_code(self):
+        if not self.template_image: return
+
+        # --- 1. Gather Basic Info ---
+        # Use current filename if available, else default
+        filename = self.current_filename if self.current_filename else "template.png"
+        name = filename.replace('.png', '')
+
+        # --- 2. Gather Widget Values ---
+        screen_idx = self.cbo_screens.currentIndex()
+        if screen_idx < 0: screen_idx = 0
+
+        # Get Physical Resolution
+        screen_obj = self.cbo_screens.currentData()
+        geo = screen_obj.geometry()
+        dpr = screen_obj.devicePixelRatio()
+        phys_w = int(geo.width() * dpr)
+        phys_h = int(geo.height() * dpr)
+
+        # Get User Settings
+        current_conf = float(self.lbl_conf_val.text())
+        is_grayscale = self.chk_gray.isChecked()
+        current_overlap = float(self.lbl_overlap_val.text())
+
+        # --- 3. Build Parameters List (Only add if NOT default) ---
+        # Default assumptions based on your functions:
+        # confidence=0.9, grayscale=False, overlap_threshold=0.5, screen=0
+
+        params = [f"'{filename}'"]  # First arg is always the image
+
+        if self.search_region:
+            params.append(f"region={self.search_region}")
+
+        if screen_idx != 0:
+            params.append(f"screen={screen_idx}")
+
+        if is_grayscale:  # Default is False, so only add if True
+            params.append(f"grayscale=True")
+
+        if current_conf != 0.9:
+            params.append(f"confidence={current_conf}")
+
+        if current_overlap != 0.5:
+            params.append(f"overlap_threshold={current_overlap}")
+
+        # original_resolution defaults to None, but we always have a value here.
+        # We include it to ensure resolution independence works.
+        params.append(f"original_resolution=({phys_w}, {phys_h})")
+
+        # --- 4. Build Code Block ---
+        code_lines = []
+
+        # Helper to generate click code cleanly
+        def get_click_line(target_name):
+            off_x = self.spin_off_x.value()
+            off_y = self.spin_off_y.value()
+
+            # Only add offset parameter if it is not (0,0)
+            if off_x == 0 and off_y == 0:
+                return f"    pyauto_desktop.clickimage({target_name})"
             else:
-                screen = self.cbo_screens.currentData()
-                if screen:
-                    geo = screen.geometry()
-                    params.append(f"region=({geo.x()}, {geo.y()}, {geo.width()}, {geo.height()})")
+                return f"    pyauto_desktop.clickimage({target_name}, offset=({off_x}, {off_y}))"
 
-            # Build Code Block
-            code_lines = [f"{name} = pyauto_desktop.locateOnScreen({', '.join(params)})"]
-
-
-            # Action (Click) or Validation
+        # Decide between Single (Best) vs Loop (All)
+        if self.rdo_single.isChecked():
+            # MODE: Best Match
+            code_lines.append(f"{name} = pyauto_desktop.locateOnScreen({', '.join(params)})")
             code_lines.append(f"if {name}:")
             code_lines.append(f"    print(f'Found {name} at: {{{name}}}')")
 
             if self.chk_click.isChecked():
-                off_x = self.spin_off_x.value()
-                off_y = self.spin_off_y.value()
-                code_lines.append(f"    pyauto_desktop.clickimage({name}, offset=({off_x}, {off_y}))")
+                code_lines.append(get_click_line(name))
 
-            code_block = "\n".join(code_lines)
+        else:
+            # MODE: All Matches (Loop)
+            code_lines.append(f"{name}_matches = pyauto_desktop.locateAllOnScreen({', '.join(params)})")
+            code_lines.append(f"for {name} in {name}_matches:")
+            code_lines.append(f"    print(f'Found {name} at: {{{name}}}')")
 
-            self.txt_output.setText(code_block)
-            QApplication.clipboard().setText(code_block)
-            self.lbl_status.setText("Code copied!")
+            if self.chk_click.isChecked():
+                code_lines.append(get_click_line(name))
+                code_lines.append(f"    time.sleep(0.5)")
+
+        code_block = "\n".join(code_lines)
+
+        # --- 5. Output & Copy to Clipboard ---
+        self.txt_output.setText(code_block)
+
+        # This line ensures automatic copying
+        QApplication.clipboard().setText(code_block)
+        self.lbl_status.setText("Code copied to clipboard!")
 
     # --- Utils ---
     def pil2pixmap(self, image):

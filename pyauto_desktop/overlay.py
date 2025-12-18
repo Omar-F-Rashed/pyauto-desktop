@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QWidget, QApplication
 from PyQt6.QtCore import Qt, QRect, QPoint
-from PyQt6.QtGui import QPainter, QColor, QPen, QBrush
+from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QFont
 
 
 class Overlay(QWidget):
@@ -23,48 +23,42 @@ class Overlay(QWidget):
         self.click_offset_x = 0
         self.click_offset_y = 0
 
-        # Calculate bounding box to cover all screens (The Giant Canvas)
+        # Calculate bounding box to cover all screens
         self._update_geometry()
 
         self.rects = []
         self.scale_factor = 1.0
 
+        # Font for indices
+        self.font_idx = QFont("Arial", 10, QFont.Weight.Bold)
+
     def _update_geometry(self):
         """Recalculate overlay geometry to cover all screens."""
         screens = QApplication.screens()
         if screens:
-            # Union of all screen geometries is safer than manual min/max
-            # to ensure we match Qt's internal understanding of the virtual desktop
             full_rect = screens[0].geometry()
             for screen in screens[1:]:
                 full_rect = full_rect.united(screen.geometry())
-
             self.setGeometry(full_rect)
         else:
             self.setGeometry(QApplication.primaryScreen().geometry())
 
     def showEvent(self, event):
-        """Recalculate geometry when shown in case screens changed."""
         super().showEvent(event)
         self._update_geometry()
 
     def set_target_screen_offset(self, x, y):
-        """
-        Update the offset for the screen currently being scanned.
-        x, y: The Global Logical coordinates of the target screen's top-left corner.
-        """
         self.target_offset_x = x
         self.target_offset_y = y
 
     def set_click_config(self, show, off_x, off_y):
-        """Update click visualization settings and trigger a repaint."""
         self.show_click = show
         self.click_offset_x = off_x
         self.click_offset_y = off_y
         self.update()
 
     def update_rects(self, rects, scale_factor):
-        self.rects = rects  # Now receiving Screen-Local Logical coordinates
+        self.rects = rects
         self.scale_factor = scale_factor
         self.update()
 
@@ -74,28 +68,24 @@ class Overlay(QWidget):
 
         try:
             painter = QPainter(self)
+            painter.setFont(self.font_idx)
 
-            # 1. Draw Detection Boxes (Green)
+            # 1. Setup Pens/Brushes
             pen_box = QPen(QColor(0, 255, 0), 2)
             brush_box = QColor(0, 255, 0, 50)
-            painter.setPen(pen_box)
-            painter.setBrush(brush_box)
 
-            # Pre-calculate click visualization tools if needed
-            if self.show_click:
-                pen_dot = QPen(QColor(255, 0, 0), 2)
-                brush_dot = QBrush(QColor(255, 0, 0))
+            pen_dot = QPen(QColor(255, 0, 0), 2)
+            brush_dot = QBrush(QColor(255, 0, 0))
 
-            for x, y, w, h in self.rects:
-                # --- Draw Box ---
-                # Logic:
-                # 1. Start with Local Rect (x, y) -> Relative to the Screen being scanned
-                # 2. Add Target Screen Offset -> Becomes Global Coordinate
+            # For text background
+            brush_text_bg = QBrush(QColor(0, 0, 0, 180))
+            pen_text = QPen(QColor(255, 255, 255))
+
+            # Loop with index
+            for i, (x, y, w, h) in enumerate(self.rects):
+                # --- Map Logic ---
                 global_x = x + self.target_offset_x
                 global_y = y + self.target_offset_y
-
-                # 3. Use Qt's built-in mapper to find where this global point
-                # sits inside this specific Overlay widget.
                 top_left_local = self.mapFromGlobal(QPoint(int(global_x), int(global_y)))
 
                 draw_x = top_left_local.x()
@@ -103,19 +93,36 @@ class Overlay(QWidget):
                 draw_w = int(round(w))
                 draw_h = int(round(h))
 
-                # Reset to box style
+                # --- Draw Box ---
                 painter.setPen(pen_box)
                 painter.setBrush(brush_box)
                 painter.drawRect(draw_x, draw_y, draw_w, draw_h)
 
+                # --- Draw Index Label ---
+                label_text = f"#{i}"
+                # Calculate text size for background rect
+                fm = painter.fontMetrics()
+                text_w = fm.horizontalAdvance(label_text) + 8
+                text_h = fm.height() + 4
+
+                # Position label just above the box (or inside if near top edge)
+                label_x = draw_x
+                label_y = draw_y - text_h
+                if label_y < 0: label_y = draw_y  # Push inside if cut off
+
+                # Draw Label Background
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(brush_text_bg)
+                painter.drawRect(label_x, label_y, text_w, text_h)
+
+                # Draw Label Text
+                painter.setPen(pen_text)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawText(QRect(label_x, label_y, text_w, text_h),
+                                 Qt.AlignmentFlag.AlignCenter, label_text)
+
                 # --- Draw Click Target (Red Dot) ---
                 if self.show_click:
-                    # Logic: Calculate position relative to the BOX, not the screen global.
-                    # Since draw_x/draw_y are already mapped to the overlay's local coordinate system,
-                    # we can simply add the offset here. This avoids "mapFromGlobal" wrapping artifacts
-                    # when coordinates go off-screen (negative values), because QPainter handles
-                    # out-of-bounds local coordinates by simply clipping them (not drawing them).
-
                     local_center_x = draw_x + (draw_w / 2)
                     local_center_y = draw_y + (draw_h / 2)
 
