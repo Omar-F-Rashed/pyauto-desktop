@@ -123,6 +123,7 @@ class MainWindow(QMainWindow):
         self.current_scale = 1.0
         self.is_image_unsaved = False
         self.current_filename = None
+        self.last_save_dir = ""  # Remember last directory used for saving
 
         # Controllers
         self.snip_controller = SnippingController()
@@ -325,7 +326,7 @@ class MainWindow(QMainWindow):
         hbox_gen.addWidget(self.btn_save)
         hbox_gen.addWidget(self.btn_gen)
 
-        out_layout.addLayout(hbox_gen)
+        out_layout.addLayout(hbox_gen) # <--- Added back missing layout
 
         self.txt_output = QTextEdit()
         self.txt_output.setPlaceholderText("Generated code will appear here...")
@@ -638,8 +639,15 @@ class MainWindow(QMainWindow):
     def save_image(self):
         if not self.template_image: return
 
-        fname, _ = QFileDialog.getSaveFileName(self, "Save Image", "template.png", "Images (*.png)")
+        # Use last_save_dir if available, otherwise default
+        default_name = "template.png"
+        start_path = os.path.join(self.last_save_dir, default_name) if self.last_save_dir else default_name
+
+        fname, _ = QFileDialog.getSaveFileName(self, "Save Image", start_path, "Images (*.png)")
         if fname:
+            # Remember the directory for next time
+            self.last_save_dir = os.path.dirname(fname)
+
             if not fname.endswith('.png'): fname += '.png'
             try:
                 self.template_image.save(fname)
@@ -679,7 +687,7 @@ class MainWindow(QMainWindow):
         # Default assumptions based on your functions:
         # confidence=0.9, grayscale=False, overlap_threshold=0.5, screen=0
 
-        params = [f"'{filename}'"]  # First arg is always the image
+        params = [f"'images/{filename}'"]  # First arg is always the image
 
         if self.search_region:
             params.append(f"region={self.search_region}")
