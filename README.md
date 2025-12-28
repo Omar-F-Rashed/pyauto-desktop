@@ -33,8 +33,7 @@ Most automation libraries fail when moved from a Dev machine (e.g., 4K monitor, 
 
 ```bash
 pip install pyauto-desktop
-
----
+```
 
 ## The Core Concept: The "Session"
 
