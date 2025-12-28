@@ -560,9 +560,9 @@ class Session:
     The 'screen' is immutable for the lifetime of the Session.
     """
 
-    def __init__(self, screen=0, source_resolution=None, source_dpr=1.0, scaling_type=None):
+    def __init__(self, screen=0, source_resolution=None, source_dpr=None, scaling_type=None):
         self._screen = screen  # Immutable: No public setter
-        self.original_resolution = source_resolution
+        self.source_resolution = source_resolution
         self.source_dpr = source_dpr
         self.scaling_type = scaling_type
 
@@ -643,7 +643,7 @@ class Session:
             return sct_img, capture_left - monitor_left, capture_top - monitor_top, scale_factor
 
     def locateAllOnScreen(self, image, region=None, grayscale=False, confidence=0.9, overlap_threshold=0.5,
-                          scaling_type=None, original_resolution=None, time_out=0, downscale=3, use_pyramid=True,
+                          scaling_type=None, source_resolution=None, source_dpr=None, time_out=0, downscale=3, use_pyramid=True,
                           return_conf=False):
         """
         Locate all instances of 'image' on the Session's screen.
@@ -653,6 +653,8 @@ class Session:
         loops = 0
 
         effective_scaling = scaling_type if scaling_type is not None else self.scaling_type
+        effective_resolution = source_resolution if source_resolution is not None else self.source_resolution
+        effective_dpr = source_dpr if source_dpr is not None else self.source_dpr
 
         target_res = None
         target_dpr = 1.0
@@ -669,14 +671,14 @@ class Session:
         scale_y = 1.0
 
         if effective_scaling == 'dpr':
-            if self.source_dpr and target_dpr:
-                ratio = target_dpr / self.source_dpr
+            if effective_dpr and target_dpr:
+                ratio = target_dpr / effective_dpr
                 scale_x = ratio
                 scale_y = ratio
 
         elif effective_scaling == 'resolution':
-            if self.original_resolution and target_res:
-                sr_w, sr_h = self.original_resolution
+            if effective_resolution and target_res:
+                sr_w, sr_h = effective_resolution
                 tr_w, tr_h = target_res
                 if sr_w > 0 and sr_h > 0:
                     scale_x = tr_w / sr_w
@@ -725,15 +727,21 @@ class Session:
 
                 time.sleep(0.01)
 
-    def locateOnScreen(self, image, region=None, grayscale=False, confidence=0.9, original_resolution=None,
-                       time_out=0, downscale=3, use_pyramid=True):
+    def locateOnScreen(self, image, region=None, grayscale=False, confidence=0.9, source_resolution=None, scaling_type=None, source_dpr=None, time_out=0, downscale=3, use_pyramid=True,):
+        
+        effective_scaling = scaling_type if scaling_type is not None else self.scaling_type
+        effective_resolution = source_resolution if source_resolution is not None else self.source_resolution
+        effective_dpr = source_dpr if source_dpr is not None else self.source_dpr
+        
         matches = self.locateAllOnScreen(
             image=image,
             region=region,
             grayscale=grayscale,
             confidence=confidence,
             overlap_threshold=0.5,
-            original_resolution=original_resolution,
+            source_resolution=effective_resolution,
+            source_dpr=effective_dpr,
+            scaling_type=effective_scaling,
             time_out=time_out,
             downscale=downscale,
             use_pyramid=use_pyramid,
@@ -810,9 +818,6 @@ class Session:
             _mouse_controller.click(pynput_button, clicks)
             return
 
-        local_target_x = 0
-        local_target_y = 0
-
         if isinstance(target, (int, float)) and isinstance(y, (int, float)):
             local_target_x = target
             local_target_y = y
@@ -870,9 +875,7 @@ class Session:
 
         _keyboard_controller.tap(pynput_key)
 
-    def locateAny(self, tasks, timeout=5):
-        defaults = {'region': None, 'confidence': 0.9, 'grayscale': True, 'downscale': 2, 'use_pyramid': True}
-
+    def locateAny(self, tasks, time_out=0):
         start_time = time.time()
 
         while True:
@@ -880,33 +883,32 @@ class Session:
                 if not isinstance(task, dict):
                     continue
 
-                t = defaults.copy()
-                t.update(task)
+                if 'task' in task and isinstance(task['task'], dict):
+                    search_args = task['task']
 
-                task_res = t.get('original_resolution', None)
+                elif 'params' in task and isinstance(task['params'], dict):
+                    search_args = task['params']
 
-                match = self.locateOnScreen(
-                    image=t['image'],
-                    region=t['region'],
-                    grayscale=t['grayscale'],
-                    confidence=t['confidence'],
-                    downscale=t['downscale'],
-                    use_pyramid=t['use_pyramid'],
-                    original_resolution=task_res
-                )
+                else:
+                    search_args = task.copy()
+                    if 'label' in search_args:
+                        del search_args['label']
+
+                label = task.get('label', 'match')
+
+                match = self.locateOnScreen(**search_args)
 
                 if match:
-                    return (t.get('label', 'match'), match)
+                    return (label, match)
 
-            if time.time() - start_time > timeout:
+            if time.time() - start_time > time_out:
                 break
             time.sleep(0.01)
         return None
 
-    def locateAll(self, tasks, timeout=0):
-        defaults = {'region': None, 'confidence': 0.9, 'grayscale': True, 'downscale': 2, 'use_pyramid': True}
-
+    def locateAll(self, tasks, time_out=0):
         results = {}
+        # Pre-fill results keys
         for task in tasks:
             if isinstance(task, dict):
                 label = task.get('label', 'unknown')
@@ -926,21 +928,15 @@ class Session:
                     continue
 
                 all_found = False
-
-                t = defaults.copy()
-                t.update(task)
-
-                task_res = t.get('original_resolution', None)
-
-                matches = self.locateAllOnScreen(
-                    image=t['image'],
-                    region=t['region'],
-                    grayscale=t['grayscale'],
-                    confidence=t['confidence'],
-                    downscale=t['downscale'],
-                    use_pyramid=t['use_pyramid'],
-                    original_resolution=task_res
-                )
+                if 'task' in task and isinstance(task['task'], dict):
+                    search_args = task['task']
+                elif 'params' in task and isinstance(task['params'], dict):
+                    search_args = task['params']
+                else:
+                    search_args = task.copy()
+                    if 'label' in search_args:
+                        del search_args['label']
+                matches = self.locateAllOnScreen(**search_args)
 
                 if matches:
                     results[label] = matches
@@ -948,7 +944,7 @@ class Session:
             if all_found:
                 break
 
-            if time.time() - start_time > timeout:
+            if time.time() - start_time > time_out:
                 break
             time.sleep(0.01)
 

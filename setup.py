@@ -1,8 +1,10 @@
 from setuptools import setup, find_packages
-
+from pathlib import Path
+this_directory = Path(__file__).parent
+long_description = (this_directory / "README.md").read_text()
 setup(
     name='pyauto-desktop',
-    version='0.2.0',
+    version='0.3.0',
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
@@ -14,6 +16,8 @@ setup(
         'mss'
     ],
     description='A desktop automation tool for image recognition.',
+    long_description_content_type='text/markdown',
+    long_description=long_description,
     author='Omar Rashed',
     author_email='justdev.contact@gmail.com',
     url='https://github.com/Omar-F-Rashed/pyauto-desktop',
