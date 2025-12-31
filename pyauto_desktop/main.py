@@ -898,8 +898,8 @@ class MainWindow(QMainWindow):
             off_x = self.spin_off_x.value()
             off_y = self.spin_off_y.value()
             if off_x == 0 and off_y == 0:
-                return f"{indent}screen{screen_idx}.clickImage({var_name})"
-            return f"{indent}screen{screen_idx}.clickImage({var_name}, offset=({off_x}, {off_y}))"
+                return f"{indent}screen{screen_idx}.click({var_name})"
+            return f"{indent}screen{screen_idx}.click({var_name}, offset=({off_x}, {off_y}))"
 
         if self.chk_anchor_mode.isChecked():
             if not self.anchor_filename: return
