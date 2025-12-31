@@ -13,8 +13,7 @@ setup(
         'Pillow',
         'PyQt6',
         'pynput',
-        'mss',
-        'pydirectinput'
+        'mss'
     ],
     description='A desktop automation tool for image recognition.',
     long_description_content_type='text/markdown',
