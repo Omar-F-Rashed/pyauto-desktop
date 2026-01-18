@@ -103,7 +103,7 @@ The auto-scaling logic is robust, but not perfect. It is possible when an image 
 
 ## Credits
 
-Special thanks to the developers below for amkgin this module possible:
+Special thanks to the developers below for making this module possible:
 * **[PyQt6](https://www.riverbankcomputing.com/software/pyqt/)** by Riverbank Computing - The GUI framework.
 * **[OpenCV](https://opencv.org/)** - Computer vision and image processing.
 * **[NumPy](https://numpy.org/)** - Fundamental package for scientific computing.
