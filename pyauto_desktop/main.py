@@ -20,7 +20,6 @@ if sys.platform == "win32":
     user32 = ctypes.windll.user32
     WDA_EXCLUDEFROMCAPTURE = 0x00000011
 
-
     def set_window_display_affinity(hwnd, affinity):
         try:
             user32.SetWindowDisplayAffinity(hwnd, affinity)
@@ -38,7 +37,6 @@ class MainWindow(InspectorUI):
 
         self.primary_specs = None
 
-        # Image Mode Data
         self.template_image = None
         self.search_region = None
         self.current_scale = 1.0
@@ -46,15 +44,13 @@ class MainWindow(InspectorUI):
         self.current_filename = None
         self.last_save_dir = ""
 
-        # Text Mode Data
-        self.text_rect = None  # (x, y, w, h) physical
-        self.text_offsets = [0, 0, 0, 0]  # Top, Bottom, Left, Right
+        self.text_rect = None
+        self.text_offsets = [0, 0, 0, 0]
 
-        # Anchor Data (Global)
         self.anchor_image = None
         self.anchor_rect = None
-        self.target_rect = None  # For Image Mode
-        self.text_anchor_rect = None  # For Text Mode
+        self.target_rect = None
+        self.text_anchor_rect = None
         self.anchor_filename = None
         self.is_anchor_unsaved = False
 
@@ -67,14 +63,12 @@ class MainWindow(InspectorUI):
             self.overlay.winId()
             set_window_display_affinity(int(self.overlay.winId()), WDA_EXCLUDEFROMCAPTURE)
 
-        # Main Detection Timer
         self.detection_timer = QTimer(self)
         self.detection_timer.timeout.connect(self.detection_step)
 
-        # Live Preview Timer (Passive)
         self.live_preview_timer = QTimer(self)
         self.live_preview_timer.timeout.connect(self.update_live_preview)
-        self.live_preview_timer.start(100)  # 10 FPS for passive preview
+        self.live_preview_timer.start(100)
 
         self.is_detecting = False
         self.worker = None
@@ -83,8 +77,7 @@ class MainWindow(InspectorUI):
 
         self.detection_context = {}
 
-        # Lists to manage granular enabling/disabling
-        self.disable_on_run = []  # Widgets to disable during detection
+        self.disable_on_run = []
 
         self.initUI()
 
@@ -98,25 +91,19 @@ class MainWindow(InspectorUI):
     @pyqtSlot(int)
     def on_tab_changed(self, index):
         try:
-            # 0 = Image, 1 = Text
-            # Hide Image Match parameters when in Text Mode
             self.container_image_params.setVisible(index == 0)
             self.btn_save.setVisible(index == 0)
-            # Disable Anchor Mode completely when in Text Extract tab
             is_text_mode = (index == 1)
 
             if is_text_mode:
-                # Force uncheck and disable
                 self.chk_anchor_mode.setChecked(False)
                 self.chk_anchor_mode.setEnabled(False)
                 self.chk_anchor_mode.setToolTip("Anchor mode is disabled in Text Extract mode.")
             else:
-                # Enable controls
                 self.chk_anchor_mode.setEnabled(True)
                 self.chk_anchor_mode.setToolTip("")
 
             self.check_gen_enable()
-            # Clear overlay artifacts when switching tabs
             if self.overlay.isVisible():
                 self.overlay.update_rects([], [], [], 1.0)
         except Exception as e:
@@ -418,7 +405,7 @@ class MainWindow(InspectorUI):
             self.btn_start.setStyleSheet("background-color: #198754;")
             self.set_controls_enabled(True)
         else:
-            current_mode = self.tabs.currentIndex()  # 0 = Image, 1 = Text
+            current_mode = self.tabs.currentIndex()
             use_anchor = self.chk_anchor_mode.isChecked()
 
             if use_anchor:
@@ -430,7 +417,7 @@ class MainWindow(InspectorUI):
                                         "Anchor has no coordinates (loaded from disk?). Cannot use Relative mode without a snip.")
                     return
 
-            if current_mode == 0:  # Image Mode
+            if current_mode == 0:
                 if not self.template_image: return
                 if use_anchor and not self.target_rect:
                     if QMessageBox.warning(self, "Spatial Data Missing",
@@ -445,54 +432,39 @@ class MainWindow(InspectorUI):
                                                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
                             self.chk_gray.setChecked(False)
 
-            elif current_mode == 1:  # Text Mode
+            elif current_mode == 1:
                 if not self.text_rect:
                     QMessageBox.warning(self, "Region Missing", "Please snip the Text Region first.")
                     return
-                # Ensure we clear previous Image Match overlays when starting Text Mode
                 self.overlay.update_rects([], [], [], 1.0)
 
             self.is_detecting = True
             self.update_overlay_click_settings()
             self.last_fps_time = time.time()
             self.overlay.show()
-            # 10ms = 100 FPS
             self.detection_timer.start(10)
             self.btn_start.setText("Stop Detection")
             self.btn_start.setStyleSheet("background-color: #dc3545;")
             self.set_controls_enabled(False)
 
     def set_controls_enabled(self, enabled):
-        # Explicitly handled list
         for widget in self.disable_on_run:
             widget.setEnabled(enabled)
         self.tabs.tabBar().setEnabled(enabled)
-        # Also re-check Gen button logic if enabled=True
         if enabled:
             self.check_gen_enable()
 
     def update_live_preview(self):
-        """Passive update for Text Tab when detection is NOT running."""
-        # Only run if:
-        # 1. Not detecting (Worker handles it then)
-        # 2. Text Tab is selected
-        # 3. We have a valid text_rect
         if self.is_detecting: return
         if self.tabs.currentIndex() != 1: return
         if not self.text_rect: return
 
         try:
-            # Determine Screen
             screen_idx = self.cbo_screens.currentIndex()
             if screen_idx < 0: screen_idx = 0
 
-            # Simple Capture Logic
-            # We need absolute coordinates of the region
-            # Text Rect is physical coordinates
-
             x, y, w, h = self.text_rect
 
-            # Apply Offsets
             top, bot, left, right = self.text_offsets
             x -= left
             y -= top
@@ -501,14 +473,11 @@ class MainWindow(InspectorUI):
 
             if w <= 0 or h <= 0: return
 
-            # For passive preview, we can use Session to grab
             session = Session(screen=screen_idx)
 
-            # Fast Capture using MSS via Session
             img_data, _, _, _ = session._prepare_capture((x, y, w, h))
 
             if img_data is not None and img_data.size > 0:
-                # Convert BGRA to RGBA for Qt
                 import cv2
                 img_rgb = cv2.cvtColor(img_data, cv2.COLOR_BGRA2RGBA)
                 h, w, ch = img_rgb.shape
@@ -516,14 +485,12 @@ class MainWindow(InspectorUI):
                 q_img = QImage(img_rgb.data, w, h, bytes_per_line, QImage.Format.Format_RGBA8888)
 
                 pix = QPixmap.fromImage(q_img)
-                # Scale to label
                 lbl_w = self.lbl_text_preview.width()
                 lbl_h = self.lbl_text_preview.height()
                 if lbl_w > 0 and lbl_h > 0:
                     self.lbl_text_preview.setPixmap(pix.scaled(lbl_w, lbl_h, Qt.AspectRatioMode.KeepAspectRatio))
 
         except Exception as e:
-            # print(f"Preview Error: {e}")
             pass
 
     def detection_step(self):
@@ -549,14 +516,12 @@ class MainWindow(InspectorUI):
         overlap = self.slider_overlap.value() / 100.0
         use_anchor = self.chk_anchor_mode.isChecked()
 
-        # Prepare Params
         img_to_pass = None
         local_region = None
         anchor_img = None
         anchor_conf = None
 
-        # ANCHOR SETUP
-        if use_anchor and mode == 'image':  # Disabled in Text mode via GUI logic
+        if use_anchor and mode == 'image':
             anchor_img = self.anchor_image
             use_margin = self.chk_anchor_margin.isChecked()
             mx_log = self.spin_margin_x.value() if use_margin else 0
@@ -578,13 +543,11 @@ class MainWindow(InspectorUI):
                 anchor_conf['w'] = tw
                 anchor_conf['h'] = th
 
-        # IMAGE MODE PARAMS
         if mode == 'image':
             img_to_pass = self.template_image
             local_region = self.search_region
 
-        # TEXT MODE PARAMS
-        ocr_lang = 'en'  # Default to EN since we removed the selector
+        ocr_lang = 'en'
         ocr_mode = 'clean'
         use_det = False
         text_rect_param = None
@@ -594,7 +557,6 @@ class MainWindow(InspectorUI):
             text_offsets = self.text_offsets
             use_det = self.chk_use_det.isChecked()
 
-            # Determine OCR Mode from Radio Buttons
             if self.rdo_ocr_dyn.isChecked():
                 ocr_mode = 'binarize'
             elif self.rdo_ocr_raw.isChecked():
@@ -602,7 +564,7 @@ class MainWindow(InspectorUI):
             else:
                 ocr_mode = 'clean'
 
-            text_rect_param = self.text_rect  # Absolute (Anchor disabled for text)
+            text_rect_param = self.text_rect
 
         self.detection_context = {
             'screen_geo': target_screen_obj.geometry(),
@@ -653,7 +615,6 @@ class MainWindow(InspectorUI):
         fps = int(1.0 / dt) if dt > 0 else 0
         self.lbl_status.setText(f"Scanning... (FPS: {fps})")
 
-        # Clear overlay if text mode
         if self.overlay.isVisible():
             self.overlay.update_rects([], [], [], 1.0)
 
@@ -733,26 +694,22 @@ class MainWindow(InspectorUI):
         return None
 
     def check_gen_enable(self, return_bool=False):
-        # Crash Fix: Ensure this always returns boolean and doesn't rely on ambiguous states
         enabled = True
 
-        # Check Anchor Mode
         if self.chk_anchor_mode.isChecked():
             if not self.anchor_image or self.is_anchor_unsaved:
                 enabled = False
 
-        # Check Tab specific
-        if self.tabs.currentIndex() == 0:  # Image
+        if self.tabs.currentIndex() == 0:
             if not self.template_image or self.is_image_unsaved:
                 enabled = False
-        else:  # Text
+        else:
             if not self.text_rect:
                 enabled = False
 
         if return_bool:
             return bool(enabled)
 
-        # Safe setEnabled call
         self.btn_gen.setEnabled(bool(enabled))
 
         can_start = False
@@ -767,7 +724,7 @@ class MainWindow(InspectorUI):
             self.btn_start.setEnabled(bool(can_start))
 
     def generate_code(self):
-        mode = self.tabs.currentIndex()  # 0=Image, 1=Text
+        mode = self.tabs.currentIndex()
 
         screen_idx = self.cbo_screens.currentIndex()
         m_res = self.primary_specs['res'] if self.primary_specs else (1920, 1080)
@@ -780,7 +737,6 @@ class MainWindow(InspectorUI):
         code_lines.append(
             f'screen{screen_idx} = pyauto_desktop.Session(screen={screen_idx}, source_resolution=({int(m_res[0])}, {int(m_res[1])}), source_dpr={dpr}{scaling_str})')
 
-        # --- Helper for Click Logic ---
         def get_click_line(var_name, indent="    "):
             if not self.chk_click.isChecked(): return None
             off_x = self.spin_off_x.value()
@@ -791,30 +747,23 @@ class MainWindow(InspectorUI):
 
         use_anchor = self.chk_anchor_mode.isChecked()
 
-        # --- IMAGE MODE GENERATION ---
         if mode == 0:
-            # Handle Target Names
-            # original_name: used for the file path (e.g. "Hello World")
-            # var_name: used for the python variable (e.g. "Hello_World")
             original_target_name = self.current_filename.replace('.png', '') if self.current_filename else 'target'
             target_var = original_target_name.replace(' ', '_').replace('-', '_')
 
-            # 1. ANCHOR LOGIC
             if use_anchor:
                 original_anchor_name = self.anchor_filename.replace('.png', '') if self.anchor_filename else 'anchor'
                 anchor_var = original_anchor_name.replace(' ', '_').replace('-', '_')
 
-                # Anchor Params
                 p_anch = [f"'images/{original_anchor_name}.png'"]
                 if self.search_region: p_anch.append(f"region={self.search_region}")
 
                 code_lines.append(f"{anchor_var}_matches = screen{screen_idx}.locateAllOnScreen({', '.join(p_anch)})")
                 code_lines.append(f"for {anchor_var} in {anchor_var}_matches:")
-                code_lines.append(f"    # Use current anchor in loop")
                 code_lines.append(f"    ax, ay, aw, ah = {anchor_var}[:4]")
 
                 if not self.anchor_rect or not self.target_rect:
-                    code_lines.append("    # ERROR: Coords missing, cannot calc relative offset")
+                    code_lines =["# ERROR: Uploaded image doesn't carry coordinates, therefore can't be used with anchor. Please snip an image instead."]
                 else:
                     ax_orig, ay_orig, _, _ = self.anchor_rect
                     tx_orig, ty_orig, tw, th = self.target_rect
@@ -833,14 +782,13 @@ class MainWindow(InspectorUI):
                     if self.chk_gray.isChecked(): p.append("grayscale=True")
                     p.append(f"confidence={self.slider_conf.value() / 100.0}")
 
-                    # Single vs Loop (Inner Loop)
                     if self.rdo_single.isChecked():
                         code_lines.append(f"    {target_var} = screen{screen_idx}.locateOnScreen({', '.join(p)})")
                         code_lines.append(f"    if {target_var}:")
                         code_lines.append(f"        print('Found {original_target_name}')")
                         click_cmd = get_click_line(target_var, "        ")
                         if click_cmd: code_lines.append(click_cmd)
-                        code_lines.append(f"        break # Stop after first match")
+                        code_lines.append(f"        break")
                     else:
                         code_lines.append(
                             f"    {target_var}_matches = screen{screen_idx}.locateAllOnScreen({', '.join(p)})")
@@ -849,14 +797,12 @@ class MainWindow(InspectorUI):
                         click_cmd = get_click_line(target_var, "        ")
                         if click_cmd: code_lines.append(click_cmd)
 
-            # 2. STANDARD IMAGE LOGIC (No Anchor)
             else:
                 p = [f"'images/{original_target_name}.png'"]
                 if self.search_region: p.append(f"region={self.search_region}")
                 if self.chk_gray.isChecked(): p.append("grayscale=True")
                 p.append(f"confidence={self.slider_conf.value() / 100.0}")
 
-                # Single vs Loop
                 if self.rdo_single.isChecked():
                     code_lines.append(f"{target_var} = screen{screen_idx}.locateOnScreen({', '.join(p)})")
                     code_lines.append(f"if {target_var}:")
@@ -870,19 +816,16 @@ class MainWindow(InspectorUI):
                     click_cmd = get_click_line(target_var, "    ")
                     if click_cmd: code_lines.append(click_cmd)
 
-        # --- TEXT MODE GENERATION ---
         elif mode == 1:
             offsets = self.text_offsets
             use_det = self.chk_use_det.isChecked()
 
-            # Get OCR Mode
             ocr_mode = 'clean'
             if self.rdo_ocr_dyn.isChecked():
                 ocr_mode = 'binarize'
             elif self.rdo_ocr_raw.isChecked():
                 ocr_mode = 'restore'
 
-            # Static Region Logic (Anchor disabled)
             x, y, w, h = self.text_rect
             top, bot, left, right = offsets
             final_x = x - left
@@ -890,7 +833,6 @@ class MainWindow(InspectorUI):
             final_w = w + left + right
             final_h = h + top + bot
 
-            code_lines.append(f"# Static Text Region with offsets applied")
             code_lines.append(f"region = ({final_x}, {final_y}, {final_w}, {final_h})")
 
             code_lines.append(

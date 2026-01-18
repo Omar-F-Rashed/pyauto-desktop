@@ -3,8 +3,6 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QPixmap
 
 class CustomTitleBar(QWidget):
-    """Custom Title Bar for Frameless Window"""
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedHeight(35)
@@ -13,13 +11,11 @@ class CustomTitleBar(QWidget):
         self.layout.setContentsMargins(10, 0, 0, 0)
         self.layout.setSpacing(10)
 
-        # Title
         self.lbl_title = QLabel("Desktop Inspector")
         self.lbl_title.setStyleSheet("color: #0d6efd; font-weight: bold; font-size: 14px;")
         self.layout.addWidget(self.lbl_title)
         self.layout.addStretch()
 
-        # Window Controls
         btn_style = """
             QPushButton { background: transparent; color: #aaa; border: none; font-weight: bold; font-size: 14px; }
             QPushButton:hover { background: #333; color: white; }
@@ -47,7 +43,6 @@ class CustomTitleBar(QWidget):
         self.btn_close.clicked.connect(self.close_window)
         self.layout.addWidget(self.btn_close)
 
-        # Drag Logic
         self.start_pos = None
 
     def minimize_window(self):
@@ -86,23 +81,18 @@ class ClickableDropLabel(QLabel):
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setStyleSheet("border: 2px dashed #555; padding: 10px; background-color: #222; color: #aaa;")
-
-        # KEY FIX: Tell the layout system "I don't care how big my image is, don't resize me"
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         self._original_pixmap = None
 
     def setPixmap(self, pixmap):
         self._original_pixmap = pixmap
-        # Scale immediately to current size
         super().setPixmap(self._scale_pixmap(pixmap))
 
     def _scale_pixmap(self, pixmap):
         if not pixmap or pixmap.isNull(): return pixmap
-        # Scale to the widget's current size (which is now locked by the layout)
         return pixmap.scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio)
 
     def resizeEvent(self, event):
-        # When the window resizes, re-scale the image to fit
         if self._original_pixmap:
             super().setPixmap(self._scale_pixmap(self._original_pixmap))
         super().resizeEvent(event)

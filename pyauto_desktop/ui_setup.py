@@ -16,29 +16,23 @@ class InspectorUI(QMainWindow):
 
     def initUI(self):
         self.setWindowTitle("Desktop Inspector")
-        # CHANGED: Resized to be wider and shorter for the 2-column layout
         self.resize(1000, 590)
 
-        # Frameless Window Setup
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
         self.setStyleSheet(DARK_THEME + """
             QMainWindow { background-color: #1e1e1e; border: 1px solid #444; }
         """)
 
-        # Main Layout Structure
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
 
-        # This is the root layout of the window
         root_layout = QVBoxLayout(main_widget)
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
 
-        # 1. Custom Title Bar (Spans full width)
         self.title_bar = CustomTitleBar(self)
         root_layout.addWidget(self.title_bar)
 
-        # 2. Scroll Area (Contains the columns)
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
@@ -47,44 +41,33 @@ class InspectorUI(QMainWindow):
 
         root_layout.addWidget(self.scroll_area)
 
-        # Content Widget inside Scroll Area
         content_widget = QWidget()
         self.scroll_area.setWidget(content_widget)
 
-        # --- TWO COLUMN LAYOUT START ---
         columns_layout = QHBoxLayout(content_widget)
         columns_layout.setContentsMargins(10, 10, 10, 10)
         columns_layout.setSpacing(15)
         columns_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        # LEFT COLUMN (Configuration & Tabs)
         left_col_widget = QWidget()
         left_col_layout = QVBoxLayout(left_col_widget)
         left_col_layout.setContentsMargins(0, 0, 0, 0)
         left_col_layout.setSpacing(10)
         left_col_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        # RIGHT COLUMN (Live Test & Generation)
         right_col_widget = QWidget()
         right_col_layout = QVBoxLayout(right_col_widget)
         right_col_layout.setContentsMargins(0, 0, 0, 0)
         right_col_layout.setSpacing(10)
         right_col_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        # Add columns to main horizontal layout
-        columns_layout.addWidget(left_col_widget, stretch=5)  # 50% width
-        columns_layout.addWidget(right_col_widget, stretch=5)  # 50% width
+        columns_layout.addWidget(left_col_widget, stretch=5)
+        columns_layout.addWidget(right_col_widget, stretch=5)
 
-        # =========================================================
-        # LEFT COLUMN CONTENT
-        # =========================================================
-
-        # --- 1. CONFIGURATION GROUP ---
         grp_config = QGroupBox("1. Configuration")
         config_layout = QVBoxLayout()
         config_layout.setSpacing(5)
 
-        # Anchor (Global)
         self.chk_anchor_mode = QCheckBox("Use Anchor Image (Relative Search)")
         self.chk_anchor_mode.setStyleSheet("font-weight: bold; color: #ffc107;")
         self.chk_anchor_mode.stateChanged.connect(self.toggle_anchor_ui)
@@ -145,10 +128,8 @@ class InspectorUI(QMainWindow):
 
         config_layout.addWidget(self.frm_anchor)
 
-        # --- TABS FOR MODES ---
         self.tabs = QTabWidget()
 
-        # TAB STYLING
         self.tabs.setStyleSheet("""
             QTabWidget::pane { border: 1px solid #444; top: -1px; }
             QTabBar::tab { background: #2b2b2b; color: #888; padding: 6px 20px; border: 1px solid #333; border-bottom: none; border-top-left-radius: 4px; border-top-right-radius: 4px; min-width: 80px; }
@@ -158,12 +139,10 @@ class InspectorUI(QMainWindow):
         self.tabs.tabBar().setDocumentMode(True)
         self.tabs.tabBar().setExpanding(True)
 
-        # TAB 1: Image Match
         self.tab_image = QWidget()
         self.init_image_tab()
         self.tabs.addTab(self.tab_image, "Image Match")
 
-        # TAB 2: Text Extract
         self.tab_text = QWidget()
         self.init_text_tab()
         self.tabs.addTab(self.tab_text, "Text Extract")
@@ -173,19 +152,12 @@ class InspectorUI(QMainWindow):
         config_layout.addWidget(self.tabs)
         grp_config.setLayout(config_layout)
 
-        # Add Config Group to Left Column
         left_col_layout.addWidget(grp_config)
 
-        # =========================================================
-        # RIGHT COLUMN CONTENT
-        # =========================================================
-
-        # --- 2. LIVE TEST ---
         grp_test = QGroupBox("2. Live Test & Action")
         test_layout = QVBoxLayout()
         test_layout.setSpacing(5)
 
-        # --- IMAGE MATCH PARAMS CONTAINER ---
         self.container_image_params = QWidget()
         img_params_layout = QVBoxLayout(self.container_image_params)
         img_params_layout.setContentsMargins(0, 0, 0, 0)
@@ -241,7 +213,6 @@ class InspectorUI(QMainWindow):
         img_params_layout.addLayout(hbox_click)
 
         test_layout.addWidget(self.container_image_params)
-        # -------------------------------------
 
         hbox_screen = QHBoxLayout()
         self.cbo_screens = QComboBox()
@@ -276,10 +247,8 @@ class InspectorUI(QMainWindow):
         test_layout.addWidget(self.lbl_status)
         grp_test.setLayout(test_layout)
 
-        # Add Test Group to Right Column
         right_col_layout.addWidget(grp_test)
 
-        # --- 3. GENERATE CODE ---
         grp_out = QGroupBox("3. Generate Code")
         out_layout = QVBoxLayout()
         out_layout.setSpacing(5)
@@ -292,7 +261,6 @@ class InspectorUI(QMainWindow):
         hbox_mode.addWidget(self.rdo_all)
         out_layout.addLayout(hbox_mode)
 
-        # Create Horizontal Layout for Save and Generate buttons
         hbox_gen = QHBoxLayout()
 
         self.btn_save = QPushButton("Save Target")
@@ -308,28 +276,22 @@ class InspectorUI(QMainWindow):
         hbox_gen.addWidget(self.btn_save)
         hbox_gen.addWidget(self.btn_gen)
 
-        # --- FIX: ADD THE BUTTON LAYOUT TO THE MAIN LAYOUT ---
         out_layout.addLayout(hbox_gen)
-        # -----------------------------------------------------
 
         self.txt_output = QTextEdit()
         self.txt_output.setPlaceholderText("Generated code will appear here...")
-        # Made text box slightly taller since we have vertical space now
         self.txt_output.setFixedHeight(120)
         out_layout.addWidget(self.txt_output)
 
         grp_out.setLayout(out_layout)
 
-        # Add Output Group to Right Column
         right_col_layout.addWidget(grp_out)
 
-        # Spacer at bottom of right column to keep things top-aligned
         right_col_layout.addStretch()
 
     def init_image_tab(self):
         layout = QVBoxLayout(self.tab_image)
         layout.setContentsMargins(5, 5, 5, 5)
-        # Remove spacing to make it compact
         layout.setSpacing(5)
 
         hbox_btns = QHBoxLayout()
@@ -356,9 +318,7 @@ class InspectorUI(QMainWindow):
         self.lbl_preview.clicked.connect(lambda: self.request_upload_image(mode='target'))
         self.lbl_preview.file_dropped.connect(lambda p: self.handle_dropped_image(p, mode='target'))
 
-        # --- FIX: HARD LOCK THE HEIGHT ---
         self.lbl_preview.setFixedHeight(250)
-        # ---------------------------------
 
         self.disable_on_run.append(self.lbl_preview)
 
@@ -375,25 +335,21 @@ class InspectorUI(QMainWindow):
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(5)
 
-        # Snip Button
         self.btn_snip_text = QPushButton("Snip Text Region")
         self.btn_snip_text.clicked.connect(self.start_snip_text)
         self.disable_on_run.append(self.btn_snip_text)
         layout.addWidget(self.btn_snip_text)
 
-        # Region Status
         self.lbl_text_region = QLabel("No Region Selected")
         self.lbl_text_region.setStyleSheet("color: #888; font-size: 12px;")
         layout.addWidget(self.lbl_text_region)
 
-        # Smart Detection Toggle (Replaces Language)
         hbox_det = QHBoxLayout()
         self.chk_use_det = QCheckBox("Enable Smart Detection (Slower)")
         self.chk_use_det.setToolTip("Uses deep learning detection model for more accurate but slower results.")
         hbox_det.addWidget(self.chk_use_det)
         layout.addLayout(hbox_det)
 
-        # NEW: OCR Mode Radio Buttons with RENAMED modes
         hbox_ocr = QHBoxLayout()
         hbox_ocr.addWidget(QLabel("Mode:"))
 
@@ -415,7 +371,6 @@ class InspectorUI(QMainWindow):
         hbox_ocr.addWidget(self.rdo_ocr_raw)
         layout.addLayout(hbox_ocr)
 
-        # Fine Tuning Offsets
         hbox_fine = QHBoxLayout()
         hbox_fine.setContentsMargins(5, 5, 5, 5)
 
@@ -438,25 +393,20 @@ class InspectorUI(QMainWindow):
         hbox_fine.addWidget(QLabel("R:"))
         hbox_fine.addWidget(self.spin_text_right)
 
-        # Live Preview
         layout.addWidget(QLabel("Live Region Preview:"))
         self.lbl_text_preview = QLabel("Waiting for Detection...")
         self.lbl_text_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_text_preview.setStyleSheet("background-color: #000; color: #fff; border: 1px solid #555;")
 
-        # --- FIX: HARD LOCK THE HEIGHT ---
         self.lbl_text_preview.setFixedHeight(120)
         self.lbl_text_preview.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
-        # ---------------------------------
 
         layout.addWidget(self.lbl_text_preview)
 
-        # Extracted Text Result
         layout.addWidget(QLabel("Extracted Text Result:"))
         self.txt_extracted_result = QTextEdit()
         self.txt_extracted_result.setReadOnly(True)
         self.txt_extracted_result.setFixedHeight(100)
         layout.addWidget(self.txt_extracted_result)
 
-        # --- KEY FIX: Add Stretch ---
         layout.addStretch()
