@@ -12,6 +12,7 @@ from pynput.keyboard import Key, Controller as KeyboardController
 import platform
 import ctypes
 from .utils import logical_to_physical, local_to_global
+from . import text_recognition  # Import the new module
 
 if platform.system() == "Windows":
     import ctypes.wintypes
@@ -336,6 +337,9 @@ def _get_image_size(image):
     return (0, 0)
 
 
+
+
+
 def _locate_all_pyramid(needleImage, haystackImage, grayscale, confidence, overlap_threshold, scale_factor, downscale,
                         return_conf=False):
     sf_x, sf_y = 1.0, 1.0
@@ -584,7 +588,7 @@ class Session:
         if x == 0 and y == 0:
             raise FailSafeException("Fail-safe triggered from mouse position (0, 0)")
 
-    def _prepare_capture(self, region, override_resolution=None, monitors=None):
+    def _prepare_capture(self, region, override_resolution=None, monitors=None, blur=True):
         gdi, user = get_resource_counts()
 
         with PerformanceTimer("Prepare Screen Capture"):
@@ -738,6 +742,50 @@ class Session:
 
                 time.sleep(0.01)
 
+    def get_pixel(self, x, y):
+        """
+        Returns (R, G, B) of the pixel at (x, y) relative to the current screen.
+        """
+        region = (x, y, 1, 1)
+
+        img, _, _, _ = self._prepare_capture(region)
+
+        if img is not None and img.size > 0:
+            b, g, r = img[0][0][:3]
+            return int(r), int(g), int(b)
+        return None
+
+    def save_screenshot(self, filename, region=None):
+        """
+        Captures the specified region (or full screen if None) and saves it to a file.
+        """
+        img, _, _, _ = self._prepare_capture(region)
+
+        if img is None or img.size == 0:
+            if DEBUG_LEVEL >= 1: print(f"Error: Could not capture screenshot for {filename}")
+            return False
+
+        try:
+            cv2.imwrite(filename, img)
+            return True
+        except Exception as e:
+            if DEBUG_LEVEL >= 1: print(f"Error saving file {filename}: {e}")
+            return False
+
+    def read_text(self, region=None, mode='clean', use_det=False):
+        """
+        Captures the screen region and returns found text lines using Windows Native OCR.
+        """
+        captured_img, _, _, _ = self._prepare_capture(region)
+
+        if captured_img is None:
+            print('')
+            return []
+
+        lines = text_recognition.get_text_from_image(captured_img, mode=mode, use_det=False)
+
+        return lines
+
     def locateOnScreen(self, image, region=None, grayscale=False, confidence=0.9, source_resolution=None,
                        scaling_type=None, source_dpr=None, time_out=0, downscale=3, use_pyramid=True, ):
 
@@ -837,7 +885,6 @@ class Session:
                     pydirectinput.moveTo(int(cur_x + offset[0]), int(cur_y + offset[1]))
                 else:
                     _mouse_controller.position = (cur_x + offset[0], cur_y + offset[1])
-                time.sleep(0.025)
 
             self._fail_safe_check()
             if self.direct_input:
