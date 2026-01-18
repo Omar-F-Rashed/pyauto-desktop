@@ -337,9 +337,6 @@ def _get_image_size(image):
     return (0, 0)
 
 
-
-
-
 def _locate_all_pyramid(needleImage, haystackImage, grayscale, confidence, overlap_threshold, scale_factor, downscale,
                         return_conf=False):
     sf_x, sf_y = 1.0, 1.0
@@ -362,7 +359,6 @@ def _locate_all_pyramid(needleImage, haystackImage, grayscale, confidence, overl
                 else:
                     haystack_full = cv2.cvtColor(haystack_full, cv2.COLOR_BGRA2BGR)
             elif haystack_full.shape[2] == 3:  # RGB/BGR
-                # Assuming RGB if coming from PIL, but OpenCV needs BGR
                 if grayscale:
                     haystack_full = cv2.cvtColor(haystack_full, cv2.COLOR_RGB2GRAY)
                 else:
@@ -380,7 +376,7 @@ def _locate_all_pyramid(needleImage, haystackImage, grayscale, confidence, overl
         haystack_small = cv2.resize(haystack_full, (small_w, small_h), interpolation=cv2.INTER_LINEAR)
         coarse_scale = (sf_x / downscale, sf_y / downscale)
 
-    # Prepare needles once to prevent 'Resize Needle' calls inside loops
+    # Prepare needles once
     with PerformanceTimer("Pyramid: Prep Needles"):
         if isinstance(needleImage, str):
             fine_needle, fine_mask = _load_cached_needle(needleImage, scale_factor, grayscale)
@@ -396,7 +392,19 @@ def _locate_all_pyramid(needleImage, haystackImage, grayscale, confidence, overl
 
     with PerformanceTimer("Pyramid: Coarse Search"):
         # Reuse _run_template_match passing the ALREADY converted haystack_small
-        coarse_confidence = max(0.5, confidence - 0.15)
+
+        # [FIX 1] Smarter Confidence Drop
+        # If user asks for 0.99, searching for 0.84 (0.99 - 0.15) is too loose for complex images.
+        # We tighten the gap for high-confidence requests.
+        if confidence > 0.95:
+            coarse_drop = 0.05
+        elif confidence > 0.85:
+            coarse_drop = 0.10
+        else:
+            coarse_drop = 0.15
+
+        coarse_confidence = max(0.5, confidence - coarse_drop)
+
         res, w_s, h_s, method = _run_template_match(
             needleImage,
             haystack_small,
@@ -410,8 +418,25 @@ def _locate_all_pyramid(needleImage, haystackImage, grayscale, confidence, overl
         else:
             loc = np.where(res >= coarse_confidence)
 
+        # [FIX 2] Coarse Peak Finding / Non-Max Suppression
+        # If we have many raw pixels, consolidate them into peaks BEFORE checking limits.
+        # This prevents a single "fat" match from looking like 50 candidates.
+        if len(loc[0]) > 10:
+            kernel = np.ones((3, 3), np.uint8)
+            if method == cv2.TM_SQDIFF_NORMED or method == cv2.TM_SQDIFF:
+                flat = cv2.erode(res, kernel)
+                peaks = (res == flat)
+                loc = np.where(peaks & (res <= match_threshold))
+            else:
+                flat = cv2.dilate(res, kernel)
+                peaks = (res == flat)
+                loc = np.where(peaks & (res >= coarse_confidence))
+
     candidate_count = len(loc[0])
-    if candidate_count > 80:
+
+    # [FIX 3] Increased Safety Limit
+    # Bumped from 80 to 200, but now it counts "distinct locations" not "pixels".
+    if candidate_count > 200:
         if DEBUG_LEVEL >= 2:
             print(f"[PERF] Pyramid Abort: Too many candidates ({candidate_count})")
         return None
@@ -787,7 +812,7 @@ class Session:
         return lines
 
     def locateOnScreen(self, image, region=None, grayscale=False, confidence=0.9, source_resolution=None,
-                       scaling_type=None, source_dpr=None, time_out=0, downscale=3, use_pyramid=True, ):
+                       scaling_type=None, source_dpr=None, time_out=0, downscale=3, use_pyramid=True):
 
         effective_scaling = scaling_type if scaling_type is not None else self.scaling_type
         effective_resolution = source_resolution if source_resolution is not None else self.source_resolution

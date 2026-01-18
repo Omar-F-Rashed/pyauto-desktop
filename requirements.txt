@@ -6,3 +6,6 @@ setuptools~=80.9.0
 pynput~=1.8.1
 mss~=10.1.0
 pydirectinput~=1.0.4
+pywinctl~=0.4.1
+rapidocr~=3.5.0
+onnxruntime~=1.23.2
