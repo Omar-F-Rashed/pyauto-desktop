@@ -100,3 +100,18 @@ if image:
 The auto-scaling logic is robust, but not perfect. It is possible when an image is scaled down, a small amount of pixel detail can be lost, which affects template matching that could require confidence score tweaking.
 
 ---
+
+## Credits
+
+Special thanks to the developers below for amkgin this module possible:
+* **[PyQt6](https://www.riverbankcomputing.com/software/pyqt/)** by Riverbank Computing - The GUI framework.
+* **[OpenCV](https://opencv.org/)** - Computer vision and image processing.
+* **[NumPy](https://numpy.org/)** - Fundamental package for scientific computing.
+* **[Pillow](https://python-pillow.org/)** - Python Imaging Library.
+* **[RapidOCR](https://github.com/RapidAI/RapidOCR)** - OCR capabilities.
+
+### Utilities
+* **[pynput](https://github.com/moses-palmer/pynput)** by Moses Palmér - Monitor and control input devices.
+* **[mss](https://github.com/BoboTiG/python-mss)** by Mickaël Schoentgen - Fast cross-platform screenshots.
+* **[pydirectinput](https://github.com/learncodebygaming/pydirectinput)** by Ben Johnson - Direct input for games.
+* **[pywinctl](https://github.com/Kalmat/PyWinCtl)** by Kalmat - Cross-platform window control.
