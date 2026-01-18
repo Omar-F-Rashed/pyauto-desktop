@@ -1,10 +1,10 @@
 from setuptools import setup, find_packages
 from pathlib import Path
 this_directory = Path(__file__).parent
-long_description = (this_directory / "README.md").read_text()
+long_description = (this_directory / "README.md").read_text(encoding="utf-8")
 setup(
     name='pyauto-desktop',
-    version='0.3.2',
+    version='0.4.0',
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
@@ -14,7 +14,9 @@ setup(
         'PyQt6',
         'pynput',
         'mss',
-        'pydirectinput'
+        'pydirectinput',
+        'pywinctl',
+        'rapidocr'
     ],
     description='A desktop automation tool for image recognition.',
     long_description_content_type='text/markdown',
