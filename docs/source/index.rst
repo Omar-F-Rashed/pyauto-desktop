@@ -48,12 +48,13 @@ Here is a basic example of locating an image and clicking it.
 
 --------------------------------------------------------------------------------
 
-API Reference
-=============
+Screen & Vision
+===============
+
 
 .. class:: Session(screen=0, source_resolution=None, source_dpr=None, scaling_type=None, direct_input=False)
 
-   The core class that manages screen capture and coordinate translation.
+   The core classs that manages screen capture and coordinate translation.
 
    **Parameters:**
 
@@ -317,6 +318,63 @@ API Reference
         elif label == 'low_mana':
             #use mana potion
 
+.. method:: read_text(region=None, mode='clean', use_det=False)
+
+      Captures the screen region and returns found text lines using Windows Native OCR.
+
+      **Parameters:**
+
+      .. list-table::
+         :widths: 20 15 25 40
+         :header-rows: 1
+
+         * - Parameter
+           - Type
+           - Default
+           - Description
+         * - **region**
+           - ``tuple``
+           - ``None``
+           - A bounding box ``(x, y, w, h)`` to limit the OCR area.
+         * - **mode**
+           - ``str``
+           - ``'clean'``
+           - Post-processing mode for the text.
+         * - **use_det**
+           - ``bool``
+           - ``False``
+           - Whether to use additional detection models.
+
+      **Returns:** A list of strings containing the text lines found.
+
+.. method:: get_pixel(x, y)
+
+   Returns the RGB color of the pixel at the specified coordinates relative to the current screen.
+
+   **Parameters:**
+
+   .. list-table::
+      :widths: 20 15 25 40
+      :header-rows: 1
+
+      * - Parameter
+        - Type
+        - Default
+        - Description
+      * - **x**
+        - ``int``
+        - **Required**
+        - The X-coordinate of the pixel.
+      * - **y**
+        - ``int``
+        - **Required**
+        - The Y-coordinate of the pixel.
+
+   **Returns:** A tuple ``(R, G, B)`` integers representing the color values. Returns ``None`` if capture fails.
+
+
+Mouse & Keyboard
+================
 
 .. method:: click(target=None, y=None, offset=(0,0), button='left', clicks=1, interval=0.2, hold_time=0)
 
@@ -433,3 +491,157 @@ API Reference
         - ``str``
         - **Required**
         - The name of the key (e.g., ``"esc"``, ``"f1"``, ``"space"``) or a single character.
+
+Window Control
+==============
+
+Helper functions to manage application windows. These functions can target windows by **Title** (string) or **PID** (integer).
+
+.. function:: find_window(target)
+
+   Finds a window by Title (string) or PID (int). Returns the first matching window object or ``None``.
+
+   **Parameters:**
+
+   .. list-table::
+      :widths: 20 15 25 40
+      :header-rows: 1
+
+      * - Parameter
+        - Type
+        - Default
+        - Description
+      * - **target**
+        - ``str`` | ``int``
+        - **Required**
+        - The Window Title or Process ID (PID).
+
+.. function:: move_window(target, x, y)
+
+   Moves the top-left corner of the window to (x, y).
+
+   **Parameters:**
+
+   .. list-table::
+      :widths: 20 15 25 40
+      :header-rows: 1
+
+      * - Parameter
+        - Type
+        - Default
+        - Description
+      * - **target**
+        - ``str`` | ``int``
+        - **Required**
+        - The Window Title or PID.
+      * - **x**
+        - ``int``
+        - **Required**
+        - The target X-coordinate.
+      * - **y**
+        - ``int``
+        - **Required**
+        - The target Y-coordinate.
+
+.. function:: resize_window(target, width, height)
+
+   Resizes the window to the specified width and height.
+
+   **Parameters:**
+
+   .. list-table::
+      :widths: 20 15 25 40
+      :header-rows: 1
+
+      * - Parameter
+        - Type
+        - Default
+        - Description
+      * - **target**
+        - ``str`` | ``int``
+        - **Required**
+        - The Window Title or PID.
+      * - **width**
+        - ``int``
+        - **Required**
+        - The target width in pixels.
+      * - **height**
+        - ``int``
+        - **Required**
+        - The target height in pixels.
+
+.. function:: focus_window(target)
+
+   Brings the window to the foreground. Automatically un-minimizes (restores) it if hidden.
+
+   **Parameters:**
+
+   .. list-table::
+      :widths: 20 15 25 40
+      :header-rows: 1
+
+      * - Parameter
+        - Type
+        - Default
+        - Description
+      * - **target**
+        - ``str`` | ``int``
+        - **Required**
+        - The Window Title or PID.
+
+.. function:: maximize_window(target)
+
+   Maximizes the specified window.
+
+   **Parameters:**
+
+   .. list-table::
+      :widths: 20 15 25 40
+      :header-rows: 1
+
+      * - Parameter
+        - Type
+        - Default
+        - Description
+      * - **target**
+        - ``str`` | ``int``
+        - **Required**
+        - The Window Title or PID.
+
+.. function:: minimize_window(target)
+
+   Minimizes the specified window.
+
+   **Parameters:**
+
+   .. list-table::
+      :widths: 20 15 25 40
+      :header-rows: 1
+
+      * - Parameter
+        - Type
+        - Default
+        - Description
+      * - **target**
+        - ``str`` | ``int``
+        - **Required**
+        - The Window Title or PID.
+
+.. function:: get_window_info(target)
+
+   Returns a dictionary of window properties (x, y, width, height, title, pid).
+
+   **Parameters:**
+
+   .. list-table::
+      :widths: 20 15 25 40
+      :header-rows: 1
+
+      * - Parameter
+        - Type
+        - Default
+        - Description
+      * - **target**
+        - ``str`` | ``int``
+        - **Required**
+        - The Window Title or PID.
