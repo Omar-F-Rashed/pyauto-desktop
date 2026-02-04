@@ -1031,6 +1031,87 @@ class Session:
             time.sleep(0.01)
         return None
 
+    def scroll(self, clicks, duration=0.0):
+        """
+        Scrolls the mouse wheel.
+        :param clicks: The amount of scrolling to perform (int).
+                       Positive = UP, Negative = DOWN.
+        :param duration: Total time in seconds to complete the scroll.
+                         If 0, scrolls instantly.
+        """
+        self._fail_safe_check()
+
+        # Ensure integer for discrete steps
+        clicks = int(clicks)
+        if clicks == 0:
+            return
+
+        if duration <= 0:
+            # INSTANT SCROLL
+            if self.direct_input:
+                self._send_direct_scroll(clicks)
+            else:
+                _mouse_controller.scroll(0, clicks)
+        else:
+            # TIMED SCROLL (Step-by-step)
+            steps = abs(clicks)
+            step_delay = duration / steps
+            direction = 1 if clicks > 0 else -1
+
+            for _ in range(steps):
+                # Always check fail-safe inside loops!
+                self._fail_safe_check()
+
+                if self.direct_input:
+                    self._send_direct_scroll(direction)
+                else:
+                    _mouse_controller.scroll(0, direction)
+
+                time.sleep(step_delay)
+
+    def _send_direct_scroll(self, clicks):
+        """
+        Low-level helper to send a hardware scroll event via ctypes.
+        """
+        if platform.system() != "Windows":
+            return
+
+        # Windows Input API Constants
+        MOUSEEVENTF_WHEEL = 0x0800
+        WHEEL_DELTA = 120
+
+        class MOUSEINPUT(ctypes.Structure):
+            _fields_ = [("dx", ctypes.c_long),
+                        ("dy", ctypes.c_long),
+                        ("mouseData", ctypes.c_ulong),
+                        ("dwFlags", ctypes.c_ulong),
+                        ("time", ctypes.c_ulong),
+                        ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong))]
+
+        class INPUT(ctypes.Structure):
+            class _INPUT(ctypes.Union):
+                _fields_ = [("mi", MOUSEINPUT)]
+
+            _anonymous_ = ("_input",)
+            _fields_ = [("type", ctypes.c_ulong),
+                        ("_input", _INPUT)]
+
+        # Calculate amount (1 click = 120 units)
+        amount = int(clicks * WHEEL_DELTA)
+
+        extra = ctypes.c_ulong(0)
+        ii_ = INPUT()
+        ii_.type = 0  # INPUT_MOUSE
+        ii_.mi.dx = 0
+        ii_.mi.dy = 0
+        ii_.mi.mouseData = amount
+        ii_.mi.dwFlags = MOUSEEVENTF_WHEEL
+        ii_.mi.time = 0
+        ii_.mi.dwExtraInfo = ctypes.pointer(extra)
+
+        ctypes.windll.user32.SendInput(1, ctypes.byref(ii_), ctypes.sizeof(ii_))
+
+
     def locateAll(self, tasks, time_out=0):
         results = {}
         # Pre-fill results keys
