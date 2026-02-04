@@ -492,6 +492,30 @@ Mouse & Keyboard
         - **Required**
         - The name of the key (e.g., ``"esc"``, ``"f1"``, ``"space"``) or a single character.
 
+.. method:: scroll(clicks, duration=0.0)
+
+   Scrolls the mouse wheel vertically.
+
+   **Parameters:**
+
+   .. list-table::
+      :widths: 20 15 25 40
+      :header-rows: 1
+
+      * - Parameter
+        - Type
+        - Default
+        - Description
+      * - **clicks**
+        - ``int``
+        - **Required**
+        - The number of steps to scroll. Positive values scroll **up**, negative values scroll **down**.
+      * - **duration**
+        - ``float``
+        - ``0.0``
+        - The total time (in seconds) to complete the scroll. If greater than 0, the scroll is performed incrementally over the specified duration.
+
+
 Window Control
 ==============
 
