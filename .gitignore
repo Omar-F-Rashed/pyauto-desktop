@@ -4,6 +4,7 @@ images/
 testing.py
 automated_tester.py
 benchmark.py
+speedtest.py
 
 __pycache__/
 *.py[cod]
@@ -17,5 +18,7 @@ pyauto_desktop.egg-info/
 .venv/
 venv/
 ENV/
+
+spee
 
 .DS_Store

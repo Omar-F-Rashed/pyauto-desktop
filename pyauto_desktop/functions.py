@@ -807,7 +807,7 @@ class Session:
             print('')
             return []
 
-        lines = text_recognition.get_text_from_image(captured_img, mode=mode, use_det=False)
+        lines = text_recognition.get_text_from_image(captured_img, mode=mode, use_det=use_det)
 
         return lines
 
