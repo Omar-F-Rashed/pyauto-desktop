@@ -12,7 +12,8 @@ from .window_control import (
     focus_window,
     maximize_window,
     minimize_window,
-    get_window_info
+    get_window_info,
+    get_focused_window
 )
 
 dpi_manager.enable_dpi_awareness()
@@ -31,5 +32,6 @@ __all__ = [
     'focus_window',
     'maximize_window',
     'minimize_window',
-    'get_window_info'
+    'get_window_info',
+    'get_focused_window'
 ]

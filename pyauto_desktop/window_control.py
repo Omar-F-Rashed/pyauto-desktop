@@ -121,7 +121,7 @@ def get_window_info(target):
     win = find_window(target)
     if win:
         return {
-            "title": win.title,
+            "title": win.title.encode('ascii', 'ignore').decode('ascii'),
             "x": win.left,
             "y": win.top,
             "width": win.width,
@@ -139,7 +139,7 @@ def get_focused_window():
         win = pywinctl.getActiveWindow()
         if win:
             return {
-                "title": win.title,
+                "title": win.title.encode('ascii', 'ignore').decode('ascii'),
                 "x": win.left,
                 "y": win.top,
                 "width": win.width,
