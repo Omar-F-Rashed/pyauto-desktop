@@ -669,3 +669,19 @@ Helper functions to manage application windows. These functions can target windo
         - ``str`` | ``int``
         - **Required**
         - The Window Title or PID.
+
+.. function:: get_focused_window()
+
+   Returns a dictionary of active window properties (title, x, y, width, height, pid).
+
+   **Example:**
+
+   .. code-block:: python
+
+        active_window = pyauto_desktop.get_focused_window()
+        title = active_window.get('title')
+        x = active_window.get('x')
+        y = active_window.get('y')
+        width = active_window.get('width')
+        height = active_window.get('height')
+        pid = active_window.get('pid') #Windows only

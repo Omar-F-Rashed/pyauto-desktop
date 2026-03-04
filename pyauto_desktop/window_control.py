@@ -129,3 +129,23 @@ def get_window_info(target):
             "pid": _get_window_pid(win)
         }
     return None
+
+
+def get_focused_window():
+    """
+    Returns a dictionary of the currently focused (active) window's properties.
+    """
+    try:
+        win = pywinctl.getActiveWindow()
+        if win:
+            return {
+                "title": win.title,
+                "x": win.left,
+                "y": win.top,
+                "width": win.width,
+                "height": win.height,
+                "pid": _get_window_pid(win)
+            }
+    except Exception as e:
+        print(f"Failed to get focused window: {e}")
+    return None
