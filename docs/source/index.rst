@@ -372,6 +372,41 @@ Screen & Vision
 
    **Returns:** A tuple ``(R, G, B)`` integers representing the color values. Returns ``None`` if capture fails.
 
+.. method:: screenshot(imageFilename=None, region=None)
+
+   Takes a screenshot of the screen or a specific region, optionally saves it to a file, and returns a PIL Image object.
+
+   **Parameters:**
+
+   .. list-table::
+      :widths: 20 15 25 40
+      :header-rows: 1
+
+      * - Parameter
+        - Type
+        - Default
+        - Description
+      * - **imageFilename**
+        - ``str``
+        - ``None``
+        - Optional file path to save the captured image (e.g., ``'screen.png'``).
+      * - **region**
+        - ``tuple``
+        - ``None``
+        - A bounding box ``(left, top, width, height)`` to limit the capture area.
+
+   **Example:**
+
+    .. code-block:: python
+
+       # Keep the image in memory as a PIL Image object
+       im = session.screenshot()
+
+       # Save the entire screen to a file and return the PIL Image
+       im_saved = session.screenshot('my_capture.png')
+
+       # Capture and save a specific region of the screen
+       im_region = session.screenshot('my_region.png', region=(0, 0, 300, 400))
 
 Mouse & Keyboard
 ================
@@ -406,7 +441,7 @@ Mouse & Keyboard
       * - **button**
         - ``str``
         - ``'left'``
-        - Which mouse button to use: ``'left'``, ``'right'``, or ``'middle'``.
+        - Which mouse button to use: ``'left'``, ``'right'``, ``'mouse4'``, ``'mouse5'``, or ``'middle'``.
       * - **clicks**
         - ``int``
         - ``1``
@@ -419,8 +454,6 @@ Mouse & Keyboard
         - ``float``
         - ``0``
         - Delay between mouseDown and mouseUp for direct input. **Only if direct_input is True in Session**
-
-   **Returns:** A list of  dictionaries ``[{label: [match_list]}, label: [match_list]}]``.
 
 
 .. method:: moveTo(x, y, duration=0.0)
@@ -437,14 +470,18 @@ Mouse & Keyboard
         - Type
         - Default
         - Description
-      * - **x**
-        - ``int``
-        - **Required**
-        - The target X-coordinate on the screen.
+      * - **target**
+        - ``tuple`` | ``list`` | ``int``
+        - ``None``
+        - A match tuple ``(x, y, w, h)``, a coordinate tuple ``(x, y)``, a list of matches tuple ``[(x, y, w, h), (x, y, w, h)]``, or ``None`` to click at current mouse position.
       * - **y**
         - ``int``
-        - **Required**
-        - The target Y-coordinate on the screen.
+        - ``None``
+        - The Y-coordinate (only used if ``target`` is passed as an X integer).
+      * - **offset**
+        - ``tuple``
+        - ``(0, 0)``
+        - Shifts the click position by ``(x, y)`` pixels relative to the target's center.
       * - **duration**
         - ``float``
         - ``0.0``
@@ -475,7 +512,7 @@ Mouse & Keyboard
 
 .. method:: press(key)
 
-   Presses a single keyboard key.
+   Presses a single keyboard key. Key list can be found here: https://pynput.readthedocs.io/en/latest/keyboard.html#pynput.keyboard.Key
 
    **Parameters:**
 
@@ -515,6 +552,81 @@ Mouse & Keyboard
         - ``0.0``
         - The total time (in seconds) to complete the scroll. If greater than 0, the scroll is performed incrementally over the specified duration.
 
+.. method:: keyDown(key)
+
+   Presses and holds down a single keyboard key. Key list can be found here: https://pynput.readthedocs.io/en/latest/keyboard.html#pynput.keyboard.Key
+
+   **Parameters:**
+
+   .. list-table::
+      :widths: 20 15 25 40
+      :header-rows: 1
+
+      * - Parameter
+        - Type
+        - Default
+        - Description
+      * - **key**
+        - ``str``
+        - **Required**
+        - The name of the key (e.g., ``"esc"``, ``"f1"``, ``"space"``) or a single character.
+
+.. method:: keyUp(key)
+
+   Releases keyboard key. Key list can be found here: https://pynput.readthedocs.io/en/latest/keyboard.html#pynput.keyboard.Key
+
+   **Parameters:**
+
+   .. list-table::
+      :widths: 20 15 25 40
+      :header-rows: 1
+
+      * - Parameter
+        - Type
+        - Default
+        - Description
+      * - **key**
+        - ``str``
+        - **Required**
+        - The name of the key (e.g., ``"esc"``, ``"f1"``, ``"space"``) or a single character.
+
+.. method:: mouseDown(button='left')
+
+   Presses and holds a mouse button. The button will remain pressed until ``mouseUp()`` is called.
+
+   **Parameters:**
+
+   .. list-table::
+      :widths: 20 15 25 40
+      :header-rows: 1
+
+      * - Parameter
+        - Type
+        - Default
+        - Description
+      * - **button**
+        - ``str``
+        - ``"left"``
+        - The mouse button to press. Accepted values: ``"left"``, ``"right"``, ``"middle"``, ``"mouse4"``, ``"mouse5"``.
+
+.. method:: mouseUp(button='left')
+
+   Releases a previously held mouse button.
+
+   **Parameters:**
+
+   .. list-table::
+      :widths: 20 15 25 40
+      :header-rows: 1
+
+      * - Parameter
+        - Type
+        - Default
+        - Description
+      * - **button**
+        - ``str``
+        - ``"left"``
+        - The mouse button to release. Accepted values: ``"left"``, ``"right"``, ``"middle"``, ``"mouse4"``, ``"mouse5"``.
 
 Window Control
 ==============

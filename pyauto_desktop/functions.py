@@ -12,7 +12,7 @@ from pynput.keyboard import Key, Controller as KeyboardController
 import platform
 import ctypes
 from .utils import logical_to_physical, local_to_global
-from . import text_recognition  # Import the new module
+from . import text_recognition
 
 if platform.system() == "Windows":
     import ctypes.wintypes
@@ -26,7 +26,23 @@ DEBUG_LEVEL = 1
 # --- INPUT CONTROLLERS ---
 _mouse_controller = Controller()
 _keyboard_controller = KeyboardController()
-
+PYNPUT_TO_PYDIRECT = {
+    'print_screen': 'printscreen',
+    'scroll_lock': 'scrolllock',
+    'page_up': 'pageup',
+    'page_down': 'pagedown',
+    'num_lock': 'numlock',
+    'caps_lock': 'capslock',
+    'shift_l': 'shiftleft',
+    'shift_r': 'shiftright',
+    'ctrl_l': 'ctrlleft',
+    'ctrl_r': 'ctrlright',
+    'alt_l': 'altleft',
+    'alt_r': 'altright',
+    'cmd': 'win',
+    'cmd_r': 'winright',
+    'menu': 'apps'
+}
 
 # --- EXCEPTION CLASSES ---
 class FailSafeException(Exception):
@@ -34,7 +50,6 @@ class FailSafeException(Exception):
 
 
 # --- THREAD LOCAL MSS ---
-# Replaces _CaptureServer for safer, faster, lock-free access
 _thread_local = threading.local()
 
 
@@ -87,9 +102,8 @@ if platform.system() == "Windows":
     MONITORENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(RECT),
                                          ctypes.c_double)
 
-    # Try to set DPI Awareness
     try:
-        ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_SYSTEM_DPI_AWARE
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
     except Exception:
         pass
 
@@ -100,7 +114,6 @@ def get_resource_counts():
         return 0, 0
 
     try:
-        # Constants for Windows API
         GR_GDIOBJECTS = 0
         GR_USEROBJECTS = 1
 
@@ -122,13 +135,11 @@ def _resolve_screen(screen_idx):
 
 def get_monitors_safe():
     with PerformanceTimer("Get Monitors Info"):
-        # Use existing MSS instance (Zero overhead)
         sct = _get_mss_instance()
         if not sct:
             return []
 
         monitors = []
-        # MSS monitors[0] is 'all combined'. We want individual physical monitors (1+)
         if len(sct.monitors) > 1:
             for m in sct.monitors[1:]:
                 monitors.append((m['left'], m['top'], m['width'], m['height']))
@@ -222,7 +233,6 @@ def _process_needle_to_cv2(img_pil, scale_factor, grayscale):
 
     needle_np = np.array(img_pil)
 
-    # Convert to OpenCV BGR / BGRA BEFORE resize to ensure correct CV2 format
     if img_pil.mode == 'RGBA':
         needle = cv2.cvtColor(needle_np, cv2.COLOR_RGBA2BGRA)
     elif img_pil.mode == 'RGB':
@@ -252,7 +262,6 @@ def _process_needle_to_cv2(img_pil, scale_factor, grayscale):
         new_w = int(max(1, w * scale_x))
         new_h = int(max(1, h * scale_y))
 
-        # Downscaling -> INTER_AREA, Upscaling -> INTER_CUBIC
         if scale_x < 1.0 and scale_y < 1.0:
             interpolation = cv2.INTER_AREA
         else:
@@ -345,7 +354,6 @@ def _locate_all_pyramid(needleImage, haystackImage, grayscale, confidence, overl
     else:
         sf_x = sf_y = scale_factor
 
-    # Convert full haystack to CV2 format once to avoid repeated conversions on crops
     with PerformanceTimer("Pyramid: Prep Haystack"):
         haystack_full_raw = _load_image(haystackImage)
         if not isinstance(haystack_full_raw, np.ndarray):
@@ -353,12 +361,12 @@ def _locate_all_pyramid(needleImage, haystackImage, grayscale, confidence, overl
 
         haystack_full = haystack_full_raw
         if len(haystack_full.shape) == 3:
-            if haystack_full.shape[2] == 4:  # RGBA/BGRA
+            if haystack_full.shape[2] == 4:
                 if grayscale:
                     haystack_full = cv2.cvtColor(haystack_full, cv2.COLOR_BGRA2GRAY)
                 else:
                     haystack_full = cv2.cvtColor(haystack_full, cv2.COLOR_BGRA2BGR)
-            elif haystack_full.shape[2] == 3:  # RGB/BGR
+            elif haystack_full.shape[2] == 3:
                 if grayscale:
                     haystack_full = cv2.cvtColor(haystack_full, cv2.COLOR_RGB2GRAY)
                 else:
@@ -376,7 +384,6 @@ def _locate_all_pyramid(needleImage, haystackImage, grayscale, confidence, overl
         haystack_small = cv2.resize(haystack_full, (small_w, small_h), interpolation=cv2.INTER_LINEAR)
         coarse_scale = (sf_x / downscale, sf_y / downscale)
 
-    # Prepare needles once
     with PerformanceTimer("Pyramid: Prep Needles"):
         if isinstance(needleImage, str):
             fine_needle, fine_mask = _load_cached_needle(needleImage, scale_factor, grayscale)
@@ -391,11 +398,7 @@ def _locate_all_pyramid(needleImage, haystackImage, grayscale, confidence, overl
             fine_method = cv2.TM_CCOEFF_NORMED
 
     with PerformanceTimer("Pyramid: Coarse Search"):
-        # Reuse _run_template_match passing the ALREADY converted haystack_small
 
-        # [FIX 1] Smarter Confidence Drop
-        # If user asks for 0.99, searching for 0.84 (0.99 - 0.15) is too loose for complex images.
-        # We tighten the gap for high-confidence requests.
         if confidence > 0.95:
             coarse_drop = 0.05
         elif confidence > 0.85:
@@ -418,9 +421,6 @@ def _locate_all_pyramid(needleImage, haystackImage, grayscale, confidence, overl
         else:
             loc = np.where(res >= coarse_confidence)
 
-        # [FIX 2] Coarse Peak Finding / Non-Max Suppression
-        # If we have many raw pixels, consolidate them into peaks BEFORE checking limits.
-        # This prevents a single "fat" match from looking like 50 candidates.
         if len(loc[0]) > 10:
             kernel = np.ones((3, 3), np.uint8)
             if method == cv2.TM_SQDIFF_NORMED or method == cv2.TM_SQDIFF:
@@ -434,8 +434,6 @@ def _locate_all_pyramid(needleImage, haystackImage, grayscale, confidence, overl
 
     candidate_count = len(loc[0])
 
-    # [FIX 3] Increased Safety Limit
-    # Bumped from 80 to 200, but now it counts "distinct locations" not "pixels".
     if candidate_count > 200:
         if DEBUG_LEVEL >= 2:
             print(f"[PERF] Pyramid Abort: Too many candidates ({candidate_count})")
@@ -467,7 +465,6 @@ def _locate_all_pyramid(needleImage, haystackImage, grayscale, confidence, overl
             if roi_x2 <= roi_x1 or roi_y2 <= roi_y1:
                 continue
 
-            # Crop from the ALREADY converted haystack_full
             haystack_crop = haystack_full[roi_y1:roi_y2, roi_x1:roi_x2]
             haystack_crop_blur = cv2.GaussianBlur(haystack_crop, (3, 3), 0)
 
@@ -590,7 +587,7 @@ class Session:
     """
 
     def __init__(self, screen=0, source_resolution=None, source_dpr=None, scaling_type=None, direct_input=False):
-        self._screen = screen  # Immutable: No public setter
+        self._screen = screen
         self.source_resolution = source_resolution
         self.source_dpr = source_dpr
         self.scaling_type = scaling_type
@@ -607,8 +604,6 @@ class Session:
         pass
 
     def _fail_safe_check(self):
-        # When using pydirectinput, the pynput controller might not reflect true position if pydirectinput moved it
-        # However, checking (0,0) is still valid for mouse position generally.
         x, y = _mouse_controller.position
         if x == 0 and y == 0:
             raise FailSafeException("Fail-safe triggered from mouse position (0, 0)")
@@ -767,6 +762,19 @@ class Session:
 
                 time.sleep(0.01)
 
+    def _resolve_keyboard_key(self, key):
+        """Helper to map a key input to pynput and pydirectinput formats."""
+        # Map for direct input
+        key_name = key.name if isinstance(key, Key) else key
+        direct_k = PYNPUT_TO_PYDIRECT.get(key_name, key_name)
+
+        # Map for pynput
+        pynput_key = key
+        if isinstance(key, str) and len(key) > 1:
+            if hasattr(Key, key):
+                pynput_key = getattr(Key, key)
+
+        return pynput_key, direct_k
     def get_pixel(self, x, y):
         """
         Returns (R, G, B) of the pixel at (x, y) relative to the current screen.
@@ -780,22 +788,62 @@ class Session:
             return int(r), int(g), int(b)
         return None
 
-    def save_screenshot(self, filename, region=None):
-        """
-        Captures the specified region (or full screen if None) and saves it to a file.
-        """
-        img, _, _, _ = self._prepare_capture(region)
+    def mouseDown(self, button='left'):
+        """Presses and holds a mouse button."""
+        self._fail_safe_check()
+        pynput_btn, direct_btn = self._resolve_mouse_button(button)
 
-        if img is None or img.size == 0:
-            if DEBUG_LEVEL >= 1: print(f"Error: Could not capture screenshot for {filename}")
-            return False
+        if self.direct_input:
+            if direct_btn in ('x1', 'x2'):
+                self._send_direct_xbutton(direct_btn, 'down')
+            else:
+                pydirectinput.mouseDown(button=direct_btn)
+        else:
+            _mouse_controller.press(pynput_btn)
 
-        try:
-            cv2.imwrite(filename, img)
-            return True
-        except Exception as e:
-            if DEBUG_LEVEL >= 1: print(f"Error saving file {filename}: {e}")
-            return False
+    def mouseUp(self, button='left'):
+        """Releases a held mouse button."""
+        self._fail_safe_check()
+        pynput_btn, direct_btn = self._resolve_mouse_button(button)
+
+        if self.direct_input:
+            if direct_btn in ('x1', 'x2'):
+                self._send_direct_xbutton(direct_btn, 'up')
+            else:
+                pydirectinput.mouseUp(button=direct_btn)
+        else:
+            _mouse_controller.release(pynput_btn)
+
+    def screenshot(self, imageFilename=None, region=None):
+        """
+        Takes a screenshot, optionally saves it to a file, and returns a PIL Image object.
+
+        :param imageFilename: Optional string path to save the image (e.g. 'screen.png')
+        :param region: Optional tuple of (left, top, width, height)
+        :return: PIL Image object
+        """
+        img_np, _, _, _ = self._prepare_capture(region)
+
+        if img_np is None or img_np.size == 0:
+            if DEBUG_LEVEL >= 1: print("Error: Could not capture screenshot.")
+            return None
+
+        if len(img_np.shape) == 3 and img_np.shape[2] == 4:
+            img_rgb = cv2.cvtColor(img_np, cv2.COLOR_BGRA2RGB)
+        elif len(img_np.shape) == 3 and img_np.shape[2] == 3:
+            img_rgb = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
+        else:
+            img_rgb = img_np
+
+        pil_img = Image.fromarray(img_rgb)
+
+        if imageFilename:
+            try:
+                pil_img.save(imageFilename)
+            except Exception as e:
+                if DEBUG_LEVEL >= 1: print(f"Error saving file {imageFilename}: {e}")
+
+        return pil_img
 
     def read_text(self, region=None, mode='clean', use_det=False):
         """
@@ -810,6 +858,52 @@ class Session:
         lines = text_recognition.get_text_from_image(captured_img, mode=mode, use_det=use_det)
 
         return lines
+
+    def _send_direct_xbutton(self, button, action):
+        """
+        Low-level helper to send hardware X-Button (Mouse 4/5) events via ctypes.
+        button: 'x1' (Mouse 4) or 'x2' (Mouse 5)
+        action: 'down' or 'up'
+        """
+        if platform.system() != "Windows":
+            if DEBUG_LEVEL >= 1: print("Debug: X-Button ctypes only supported on Windows.")
+            return
+
+        MOUSEEVENTF_XDOWN = 0x0080
+        MOUSEEVENTF_XUP = 0x0100
+        XBUTTON1 = 0x0001  # Mouse 4
+        XBUTTON2 = 0x0002  # Mouse 5
+
+        class MOUSEINPUT(ctypes.Structure):
+            _fields_ = [("dx", ctypes.c_long),
+                        ("dy", ctypes.c_long),
+                        ("mouseData", ctypes.c_ulong),
+                        ("dwFlags", ctypes.c_ulong),
+                        ("time", ctypes.c_ulong),
+                        ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong))]
+
+        class INPUT(ctypes.Structure):
+            class _INPUT(ctypes.Union):
+                _fields_ = [("mi", MOUSEINPUT)]
+
+            _anonymous_ = ("_input",)
+            _fields_ = [("type", ctypes.c_ulong),
+                        ("_input", _INPUT)]
+
+        mouse_data = XBUTTON1 if button in ('x1', 'mouse4') else XBUTTON2
+        dw_flags = MOUSEEVENTF_XDOWN if action == 'down' else MOUSEEVENTF_XUP
+
+        extra = ctypes.c_ulong(0)
+        ii_ = INPUT()
+        ii_.type = 0
+        ii_.mi.dx = 0
+        ii_.mi.dy = 0
+        ii_.mi.mouseData = mouse_data
+        ii_.mi.dwFlags = dw_flags
+        ii_.mi.time = 0
+        ii_.mi.dwExtraInfo = ctypes.pointer(extra)
+
+        ctypes.windll.user32.SendInput(1, ctypes.byref(ii_), ctypes.sizeof(ii_))
 
     def locateOnScreen(self, image, region=None, grayscale=False, confidence=0.9, source_resolution=None,
                        scaling_type=None, source_dpr=None, time_out=0, downscale=3, use_pyramid=True):
@@ -840,136 +934,119 @@ class Session:
 
         return None
 
-    def moveTo(self, x, y, duration=0.0):
+    def _resolve_coords(self, target, y=None, offset=(0, 0)):
+        """
+        Standardizes various input formats into a single (x, y) coordinate.
+        Returns None if the format is invalid.
+        """
+        local_x, local_y = None, None
+
+        if isinstance(target, (int, float)) and isinstance(y, (int, float)):
+            local_x, local_y = target, y
+
+        elif isinstance(target, (tuple, list)):
+            if len(target) == 2:  # Point (x, y)
+                local_x, local_y = target
+            elif len(target) == 4:  # Rectangle (x, y, w, h)
+                mx, my, mw, mh = target
+                local_x, local_y = mx + (mw / 2), my + (mh / 2)
+
+        elif target is None:
+            global_x, global_y = _mouse_controller.position
+
+            physical_screen = _resolve_screen(self._screen)
+            monitors = get_monitors_safe()
+            monitor_left, monitor_top, _, _ = monitors[physical_screen if physical_screen < len(monitors) else 0]
+
+            local_x = global_x - monitor_left
+            local_y = global_y - monitor_top
+
+        if local_x is not None:
+            return local_x + offset[0], local_y + offset[1]
+
+        return None
+
+    def _set_mouse_pos(self, x, y):
+        if self.direct_input:
+            pydirectinput.moveTo(int(x), int(y))
+        else:
+            _mouse_controller.position = (int(x), int(y))
+        self._fail_safe_check()
+
+    def _animate_move(self, dest_x, dest_y, duration):
+        start_x, start_y = _mouse_controller.position
+        start_time = time.time()
+
+        while True:
+            elapsed = time.time() - start_time
+            if elapsed >= duration:
+                break
+
+            ratio = elapsed / duration
+            cur_x = start_x + (dest_x - start_x) * ratio
+            cur_y = start_y + (dest_y - start_y) * ratio
+
+            self._set_mouse_pos(cur_x, cur_y)
+            time.sleep(0.005)
+
+        self._set_mouse_pos(dest_x, dest_y)
+
+    def moveTo(self, target=None, y=None,  offset=(0, 0), duration=0.0):
+        self._fail_safe_check()
+
+        if isinstance(target, list) and not (len(target) > 0 and isinstance(target[0], (int, float))):
+            for item in target:
+                self.moveTo(item, duration=duration, offset=offset)
+            return
+
+        coords = self._resolve_coords(target, y, offset)
+        if coords is None: return
+        dest_x, dest_y = coords
+
         physical_screen = _resolve_screen(self._screen)
         monitors = get_monitors_safe()
+        monitor_left, monitor_top, _, _ = monitors[physical_screen if physical_screen < len(monitors) else 0]
 
-        if physical_screen >= len(monitors):
-            physical_screen = 0
-
-        monitor_left, monitor_top, _, _ = monitors[physical_screen]
-
-        dest_x = monitor_left + x
-        dest_y = monitor_top + y
-
-        self._fail_safe_check()
+        final_x, final_y = monitor_left + dest_x, monitor_top + dest_y
 
         if duration <= 0:
-            if self.direct_input:
-                pydirectinput.moveTo(int(dest_x), int(dest_y))
-            else:
-                _mouse_controller.position = (dest_x, dest_y)
-            self._fail_safe_check()
+            self._set_mouse_pos(final_x, final_y)
         else:
-            start_x, start_y = _mouse_controller.position
-            start_time = time.time()
+            self._animate_move(final_x, final_y, duration)
 
-            while True:
-                elapsed = time.time() - start_time
-                if elapsed >= duration:
-                    break
-
-                ratio = elapsed / duration
-                cur_x = start_x + (dest_x - start_x) * ratio
-                cur_y = start_y + (dest_y - start_y) * ratio
-
-                if self.direct_input:
-                    pydirectinput.moveTo(int(cur_x), int(cur_y))
-                else:
-                    _mouse_controller.position = (int(cur_x), int(cur_y))
-
-                self._fail_safe_check()
-                time.sleep(0.005)
-
-            if self.direct_input:
-                pydirectinput.moveTo(int(dest_x), int(dest_y))
-            else:
-                _mouse_controller.position = (dest_x, dest_y)
-            self._fail_safe_check()
+    def _resolve_mouse_button(self, button):
+        """Helper to map string button names to pynput and direct input buttons."""
+        button = button.lower()
+        if button in ('mouse4', 'x1'):
+            return Button.x1, 'x1'
+        elif button in ('mouse5', 'x2'):
+            return Button.x2, 'x2'
+        elif button == 'right':
+            return Button.right, 'right'
+        elif button == 'middle':
+            return Button.middle, 'middle'
+        else:
+            return Button.left, 'left'
 
     def click(self, target=None, y=None, offset=(0, 0), button='left', clicks=1, interval=0.2, hold_time=0):
-        self._fail_safe_check()
-
-        if isinstance(target, list):
-            if DEBUG_LEVEL >= 1: print(f"Debug: Processing list of {len(target)} matches.")
+        # Handle list of targets
+        if isinstance(target, list) and not (len(target) > 0 and isinstance(target[0], (int, float))):
             for item in target:
                 self.click(item, offset=offset, button=button, clicks=clicks, interval=interval, hold_time=hold_time)
                 time.sleep(interval)
             return
 
-        pynput_button = Button.left
-        if button == 'right':
-            pynput_button = Button.right
-        elif button == 'middle':
-            pynput_button = Button.middle
+        # moveTo now handles all the coordinate resolution and offset logic for us
+        self.moveTo(target, y, offset=offset)
 
-        if target is None:
-            if offset != (0, 0):
-                cur_x, cur_y = _mouse_controller.position
-                if self.direct_input:
-                    pydirectinput.moveTo(int(cur_x + offset[0]), int(cur_y + offset[1]))
-                else:
-                    _mouse_controller.position = (cur_x + offset[0], cur_y + offset[1])
-
-            self._fail_safe_check()
-            if self.direct_input:
-                for i in range(clicks):
-                    pydirectinput.mouseDown(button=button)
-                    if hold_time > 0:
-                        time.sleep(hold_time)
-                    pydirectinput.mouseUp(button=button)
-                    if i < clicks - 1:
-                        time.sleep(interval)
-            else:
-                _mouse_controller.click(pynput_button, clicks)
-            return
-
-        if isinstance(target, (int, float)) and isinstance(y, (int, float)):
-            local_target_x = target
-            local_target_y = y
-
-        elif isinstance(target, (tuple, list)):
-            if len(target) == 2:
-                local_target_x, local_target_y = target
-            elif len(target) == 4:
-                mx, my, mw, mh = target
-                local_target_x = mx + (mw / 2)
-                local_target_y = my + (mh / 2)
-            else:
-                if DEBUG_LEVEL >= 1: print(f"Debug: Invalid tuple length {len(target)}, skipping.")
-                return
-        else:
-            if DEBUG_LEVEL >= 1: print("Debug: Invalid target format, skipping.")
-            return
-
-        local_target_x += offset[0]
-        local_target_y += offset[1]
-
-        physical_screen = _resolve_screen(self._screen)
-        monitors = get_monitors_safe()
-
-        if physical_screen >= len(monitors):
-            physical_screen = 0
-
-        monitor_left, monitor_top, _, _ = monitors[physical_screen]
-
-        global_target_x = monitor_left + local_target_x
-        global_target_y = monitor_top + local_target_y
-
-        self._fail_safe_check()
-
-        if self.direct_input:
-            pydirectinput.moveTo(int(global_target_x), int(global_target_y))
-            for i in range(clicks):
-                pydirectinput.mouseDown(button=button)
-                if hold_time > 0:
-                    time.sleep(hold_time)
-                pydirectinput.mouseUp(button=button)
-                if i < clicks - 1:
-                    time.sleep(interval)
-        else:
-            _mouse_controller.position = (global_target_x, global_target_y)
-            _mouse_controller.click(pynput_button, clicks)
+        # Execute the click loop
+        for i in range(clicks):
+            self.mouseDown(button)
+            if hold_time > 0:
+                time.sleep(hold_time)
+            self.mouseUp(button)
+            if i < clicks - 1:
+                time.sleep(interval)
 
     def write(self, message, interval=0.0):
         self._fail_safe_check()
@@ -985,20 +1062,34 @@ class Session:
                 time.sleep(interval)
 
     def press(self, key):
+        """Presses and releases a keyboard key (Unified pynput standard)."""
         self._fail_safe_check()
+        pynput_key, direct_k = self._resolve_keyboard_key(key)
 
         if self.direct_input:
-            k = key
-            if isinstance(key, Key):
-                k = key.name
-            pydirectinput.press(k)
+            pydirectinput.press(direct_k)
         else:
-            pynput_key = key
-            if isinstance(key, str) and len(key) > 1:
-                if hasattr(Key, key):
-                    pynput_key = getattr(Key, key)
-
             _keyboard_controller.tap(pynput_key)
+
+    def keyDown(self, key):
+        """Presses and holds a keyboard key (Unified pynput standard)."""
+        self._fail_safe_check()
+        pynput_key, direct_k = self._resolve_keyboard_key(key)
+
+        if self.direct_input:
+            pydirectinput.keyDown(direct_k)
+        else:
+            _keyboard_controller.press(pynput_key)
+
+    def keyUp(self, key):
+        """Releases a held keyboard key (Unified pynput standard)."""
+        self._fail_safe_check()
+        pynput_key, direct_k = self._resolve_keyboard_key(key)
+
+        if self.direct_input:
+            pydirectinput.keyUp(direct_k)
+        else:
+            _keyboard_controller.release(pynput_key)
 
     def locateAny(self, tasks, time_out=0):
         start_time = time.time()
@@ -1041,25 +1132,21 @@ class Session:
         """
         self._fail_safe_check()
 
-        # Ensure integer for discrete steps
         clicks = int(clicks)
         if clicks == 0:
             return
 
         if duration <= 0:
-            # INSTANT SCROLL
             if self.direct_input:
                 self._send_direct_scroll(clicks)
             else:
                 _mouse_controller.scroll(0, clicks)
         else:
-            # TIMED SCROLL (Step-by-step)
             steps = abs(clicks)
             step_delay = duration / steps
             direction = 1 if clicks > 0 else -1
 
             for _ in range(steps):
-                # Always check fail-safe inside loops!
                 self._fail_safe_check()
 
                 if self.direct_input:
@@ -1076,7 +1163,6 @@ class Session:
         if platform.system() != "Windows":
             return
 
-        # Windows Input API Constants
         MOUSEEVENTF_WHEEL = 0x0800
         WHEEL_DELTA = 120
 
@@ -1096,12 +1182,11 @@ class Session:
             _fields_ = [("type", ctypes.c_ulong),
                         ("_input", _INPUT)]
 
-        # Calculate amount (1 click = 120 units)
         amount = int(clicks * WHEEL_DELTA)
 
         extra = ctypes.c_ulong(0)
         ii_ = INPUT()
-        ii_.type = 0  # INPUT_MOUSE
+        ii_.type = 0
         ii_.mi.dx = 0
         ii_.mi.dy = 0
         ii_.mi.mouseData = amount
@@ -1114,7 +1199,6 @@ class Session:
 
     def locateAll(self, tasks, time_out=0):
         results = {}
-        # Pre-fill results keys
         for task in tasks:
             if isinstance(task, dict):
                 label = task.get('label', 'unknown')

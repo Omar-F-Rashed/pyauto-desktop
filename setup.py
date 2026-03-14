@@ -4,7 +4,7 @@ this_directory = Path(__file__).parent
 long_description = (this_directory / "README.md").read_text(encoding="utf-8")
 setup(
     name='pyauto-desktop',
-    version='0.4.4',
+    version='0.5.0',
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
